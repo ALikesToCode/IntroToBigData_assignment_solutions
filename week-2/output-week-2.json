@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "bucket_name": "function-test-bucket-2023",
+  "blob_name": "Week-2-test-file.txt",
+  "line_count": 24,
+  "file_size_bytes": 1156,
+  "execution_timestamp": "2024-01-15T10:30:45.123Z",
+  "function_version": "1",
+  "processing_time_ms": 487
+} 

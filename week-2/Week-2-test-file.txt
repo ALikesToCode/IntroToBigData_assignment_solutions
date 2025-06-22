@@ -1,0 +1,24 @@
+Line 1: Introduction to Google Cloud Functions
+Line 2: This is a serverless computing platform
+Line 3: Functions are event-driven and stateless
+Line 4: They can be triggered by HTTP requests
+Line 5: Or by cloud events like GCS file uploads
+
+Line 7: Testing our line counting function
+Line 8: This file contains multiple lines
+Line 9: Including some empty lines
+Line 10: To test the counting functionality
+
+Line 12: Google Cloud Functions benefits:
+Line 13: - No server management required
+Line 14: - Automatic scaling
+Line 15: - Pay-per-use pricing model
+Line 16: - Support for multiple programming languages
+
+Line 18: Integration with Google Cloud Storage
+Line 19: Functions can easily access GCS buckets
+Line 20: And process files automatically
+Line 21: Making them perfect for data processing tasks
+
+Line 23: End of test file
+Line 24: Total expected count: 24 lines 
