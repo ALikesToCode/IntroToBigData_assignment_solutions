@@ -1,10 +1,23 @@
 {
   "success": true,
-  "bucket_name": "function-test-bucket-2023",
-  "blob_name": "Week-2-test-file.txt",
-  "line_count": 24,
-  "file_size_bytes": 1156,
-  "execution_timestamp": "2024-01-15T10:30:45.123Z",
-  "function_version": "1",
-  "processing_time_ms": 487
+  "bucket_name": "intro-to-big-data-week-1",
+  "blob_name": "Week-1-test-file.txt",
+  "line_count": 468,
+  "file_size_bytes": null,
+  "execution_timestamp": "2025-06-22T17:36:42Z",
+  "function_details": {
+    "name": "count-gcs-lines-http",
+    "runtime": "python311",
+    "region": "asia-south1",
+    "project": "steady-triumph-447006-f8",
+    "memory": "256MB",
+    "timeout": "60s",
+    "generation": "2nd gen"
+  },
+  "urls": {
+    "cloud_functions_url": "https://asia-south1-steady-triumph-447006-f8.cloudfunctions.net/count-gcs-lines-http",
+    "cloud_run_url": "https://count-gcs-lines-http-ppa7lhdyra-el.a.run.app"
+  },
+  "test_status": "PASSED",
+  "notes": "Successfully deployed and tested Google Cloud Function for counting lines in GCS files. Function works with both Cloud Functions and Cloud Run URLs (Gen 2 functions provide both)."
 } 
