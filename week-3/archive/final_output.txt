@@ -1,0 +1,34 @@
+============================================================
+User Click Data Analysis with Apache Spark
+============================================================
+Data file: data.txt
+Application: UserClickAnalysis
+------------------------------------------------------------
+Initializing Spark session...
+Spark version: 4.0.0
+Spark UI available at: http://artix-main:4040
+------------------------------------------------------------
+Analyzing click data...
+Processing 30 lines from 'data.txt'
+
+Click Analysis Results:
+==============================
+Time Interval   Click Count
+------------------------------
+0-6             4         
+6-12            7         
+12-18           13        
+18-24           6         
+------------------------------
+Total           30        
+==============================
+
+Distribution Analysis:
+------------------------------
+0-6: 4 clicks (13.3%)
+6-12: 7 clicks (23.3%)
+12-18: 13 clicks (43.3%)
+18-24: 6 clicks (20.0%)
+
+Stopping Spark session...
+Spark session stopped successfully.
