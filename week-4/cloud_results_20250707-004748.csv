@@ -1,0 +1,8 @@
+customer_key,customer_id,customer_name,address,phone,email,effective_start_date,effective_end_date,is_current
+1,1001,John Smith,123 Main St,555-1234,john.smith@email.com,2023-01-01,9999-12-31,true
+2,1002,Mary Johnson,456 Oak Ave,555-5678,mary.johnson@email.com,2023-01-01,9999-12-31,true
+2,1002,Mary Johnson,456 Oak Ave,555-5678,mary.johnson@email.com,2023-01-01,2024-01-15,false
+9,1002,Mary Johnson,789 Sunset Blvd,555-5678,mary.johnson@email.com,2024-01-15,9999-12-31,true
+3,1003,Robert Brown,789 Pine Rd,555-9012,robert.brown@email.com,2023-01-01,2023-06-15,false
+4,1003,Robert Brown,321 Elm St,555-9012,robert.brown@email.com,2023-06-16,9999-12-31,true
+4,1003,Robert Brown,321 Elm St,555-9012,robert.brown@email.com,2023-06-16,2024-01-15,false
