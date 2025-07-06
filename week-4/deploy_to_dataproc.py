@@ -191,15 +191,50 @@ class DataprocDeployer:
             # Capture the output to extract the real job ID
             result = self.run_command(submit_cmd.replace('\n', ' ').replace('\\', ''), capture_output=True)
             
-            # Extract job ID from output like "Job [abc123...] submitted."
-            job_id_match = re.search(r'Job \[([a-f0-9]+)\] submitted', result)
+            # Debug: Show partial output for troubleshooting
+            logger.debug(f"Job submit output (first 500 chars): {result[:500]}")
+            
+            # Extract job ID from YAML output format "jobId: abc123..."
+            job_id_match = re.search(r'jobId:\s*([a-f0-9]+)', result)
             if job_id_match:
                 actual_job_id = job_id_match.group(1)
                 logger.info(f"Job submitted successfully with ID: {actual_job_id}")
+                self.actual_job_id = actual_job_id  # Store for later use
                 return actual_job_id
             else:
-                logger.error(f"Could not extract job ID from output: {result}")
-                return None
+                # Try alternative pattern in case format changes
+                job_id_match = re.search(r'Job \[([a-f0-9]+)\] submitted', result)
+                if job_id_match:
+                    actual_job_id = job_id_match.group(1)
+                    logger.info(f"Job submitted successfully with ID: {actual_job_id}")
+                    self.actual_job_id = actual_job_id
+                    return actual_job_id
+                else:
+                    # Final fallback - extract any 32-character hex string that looks like a job ID
+                    job_id_match = re.search(r'([a-f0-9]{32})', result)
+                    if job_id_match:
+                        actual_job_id = job_id_match.group(1)
+                        logger.info(f"Job submitted successfully with ID (fallback): {actual_job_id}")
+                        self.actual_job_id = actual_job_id
+                        return actual_job_id
+                    else:
+                        logger.error(f"Could not extract job ID from output: {result}")
+                        logger.info("Attempting to find recent job as fallback...")
+                        
+                        # Try to find recently submitted job for this cluster
+                        try:
+                            recent_jobs = self.run_command(
+                                f"gcloud dataproc jobs list --region={self.region} --cluster={self.cluster_name} --limit=1 --format='value(reference.jobId)'"
+                            )
+                            if recent_jobs.strip():
+                                fallback_job_id = recent_jobs.strip()
+                                logger.info(f"Found recent job ID as fallback: {fallback_job_id}")
+                                self.actual_job_id = fallback_job_id
+                                return fallback_job_id
+                        except Exception as e:
+                            logger.warning(f"Could not find fallback job: {e}")
+                        
+                        return None
                 
         except Exception as e:
             logger.error(f"Error submitting job: {e}")
@@ -210,17 +245,42 @@ class DataprocDeployer:
         try:
             logger.info(f"Monitoring job: {job_id}")
             
-            while True:
+            # Check initial status to see if job completed quickly
+            try:
                 status = self.run_command(
                     f"gcloud dataproc jobs describe {job_id} --region={self.region} --format='value(status.state)'"
                 )
+                logger.info(f"Initial job status: {status}")
                 
-                logger.info(f"Job status: {status}")
-                
-                if status in ['DONE', 'ERROR', 'CANCELLED']:
-                    break
-                
-                time.sleep(30)
+                if status == 'DONE':
+                    logger.info("Job completed successfully (completed quickly)!")
+                    return True
+                elif status in ['ERROR', 'CANCELLED']:
+                    logger.error(f"Job failed with status: {status}")
+                    return False
+                    
+            except Exception as e:
+                logger.warning(f"Could not get initial job status: {e}")
+                # Continue with monitoring loop
+            
+            # Monitor job progress
+            while True:
+                try:
+                    status = self.run_command(
+                        f"gcloud dataproc jobs describe {job_id} --region={self.region} --format='value(status.state)'"
+                    )
+                    
+                    logger.info(f"Job status: {status}")
+                    
+                    if status in ['DONE', 'ERROR', 'CANCELLED']:
+                        break
+                    
+                    time.sleep(30)
+                    
+                except Exception as e:
+                    logger.warning(f"Error checking job status: {e}")
+                    time.sleep(30)
+                    continue
             
             if status == 'DONE':
                 logger.info("Job completed successfully!")
