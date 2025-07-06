@@ -1,0 +1,9 @@
+customer_id,customer_name,address,phone,email,source_date
+1001,John Smith,123 Main St,555-1234,john.smith@email.com,2024-01-15
+1002,Mary Johnson,789 Sunset Blvd,555-5678,mary.johnson@email.com,2024-01-15
+1003,Robert Brown,321 Elm St,555-9999,robert.brown@email.com,2024-01-15
+1004,Sarah Davis,654 Maple Dr,555-3456,sarah.davis@email.com,2024-01-15
+1005,Michael Wilson,147 Birch St,555-7890,michael.wilson@email.com,2024-01-15
+1006,Lisa Anderson,258 Spruce Way,555-2468,lisa.anderson@email.com,2024-01-15
+1007,David Miller,369 Valley View,555-1357,david.miller@email.com,2024-01-15
+1008,Jennifer Taylor,741 Mountain Rd,555-8642,jennifer.taylor@email.com,2024-01-15 
