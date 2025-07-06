@@ -12,6 +12,7 @@ Date: July 2025
 
 import sys
 import logging
+import argparse
 from datetime import datetime, date
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, lit, max as spark_max, row_number, trim, coalesce, to_date
@@ -361,27 +362,19 @@ def main():
     
     try:
         # Parse command line arguments
-        args = sys.argv[1:]  # Skip script name
+        parser = argparse.ArgumentParser(description='SCD Type II Implementation')
+        parser.add_argument('--existing_data_path', default="data/customer_existing.csv",
+                           help='Path to existing customer data')
+        parser.add_argument('--new_data_path', default="data/customer_new.csv",
+                           help='Path to new customer data')
+        parser.add_argument('--output_path', default="output/customer_dimension_updated",
+                           help='Output path for results')
         
-        # Default paths for local testing
-        existing_data_path = "data/customer_existing.csv"
-        new_data_path = "data/customer_new.csv"
-        output_path = "output/customer_dimension_updated"
+        args = parser.parse_args()
         
-        # Parse arguments
-        i = 0
-        while i < len(args):
-            if args[i] == '--existing_data_path' and i + 1 < len(args):
-                existing_data_path = args[i + 1]
-                i += 2
-            elif args[i] == '--new_data_path' and i + 1 < len(args):
-                new_data_path = args[i + 1]
-                i += 2
-            elif args[i] == '--output_path' and i + 1 < len(args):
-                output_path = args[i + 1]
-                i += 2
-            else:
-                i += 1
+        existing_data_path = args.existing_data_path
+        new_data_path = args.new_data_path
+        output_path = args.output_path
         
         logger.info(f"Using paths:")
         logger.info(f"  Existing data: {existing_data_path}")

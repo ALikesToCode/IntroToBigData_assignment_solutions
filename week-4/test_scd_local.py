@@ -88,7 +88,10 @@ def run_scd_test():
     logger.info("Running SCD Type II implementation...")
     try:
         result = subprocess.run([
-            sys.executable, script_path, existing_data, new_data, output_path
+            sys.executable, script_path, 
+            '--existing_data_path', existing_data,
+            '--new_data_path', new_data,
+            '--output_path', output_path
         ], capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
