@@ -8,6 +8,7 @@ import sys
 import subprocess
 import logging
 import time
+import re
 from datetime import datetime
 
 # Setup logging
@@ -172,8 +173,7 @@ class DataprocDeployer:
     def submit_job(self):
         """Submit PySpark job to Dataproc cluster"""
         try:
-            job_id = f"scd-type2-job-{self.timestamp}"
-            logger.info(f"Submitting PySpark job: {job_id}")
+            logger.info(f"Submitting PySpark job with timestamp: {self.timestamp}")
             
             submit_cmd = f"""
             gcloud dataproc jobs submit pyspark \
@@ -188,9 +188,19 @@ class DataprocDeployer:
                 --output_path=gs://{self.bucket_name}/output/customer_dimension_{self.timestamp}
             """
             
-            result = self.run_command(submit_cmd.replace('\n', ' ').replace('\\', ''), capture_output=False)
-            logger.info(f"Job submitted successfully")
-            return job_id
+            # Capture the output to extract the real job ID
+            result = self.run_command(submit_cmd.replace('\n', ' ').replace('\\', ''), capture_output=True)
+            
+            # Extract job ID from output like "Job [abc123...] submitted."
+            job_id_match = re.search(r'Job \[([a-f0-9]+)\] submitted', result)
+            if job_id_match:
+                actual_job_id = job_id_match.group(1)
+                logger.info(f"Job submitted successfully with ID: {actual_job_id}")
+                return actual_job_id
+            else:
+                logger.error(f"Could not extract job ID from output: {result}")
+                return None
+                
         except Exception as e:
             logger.error(f"Error submitting job: {e}")
             return None
@@ -226,28 +236,96 @@ class DataprocDeployer:
     def get_job_output(self, job_id):
         """Get job output and logs"""
         try:
-            logger.info("Retrieving job output...")
+            logger.info(f"Retrieving job output for job ID: {job_id}")
+            
+            # Get job details first
+            try:
+                job_status = self.run_command(
+                    f"gcloud dataproc jobs describe {job_id} --region={self.region} --format='value(status.state)'"
+                )
+                logger.info(f"Final job status: {job_status}")
+            except Exception as e:
+                logger.warning(f"Could not get job status: {e}")
             
             # Get job logs
-            logs = self.run_command(
-                f"gcloud dataproc jobs describe {job_id} --region={self.region} --format='value(driverOutputResourceUri)'"
-            )
-            
-            if logs:
-                logger.info(f"Job logs available at: {logs}")
+            try:
+                logs = self.run_command(
+                    f"gcloud dataproc jobs describe {job_id} --region={self.region} --format='value(driverOutputResourceUri)'"
+                )
+                if logs:
+                    logger.info(f"Job logs available at: {logs}")
+            except Exception as e:
+                logger.warning(f"Could not get job logs: {e}")
             
             # List output files
             logger.info("Listing output files...")
-            output_files = self.run_command(
-                f"gcloud storage ls gs://{self.bucket_name}/output/"
-            )
-            
-            logger.info("Output files:")
-            print(output_files)
+            try:
+                output_files = self.run_command(
+                    f"gcloud storage ls gs://{self.bucket_name}/output/"
+                )
+                logger.info("Output files:")
+                print(output_files)
+                
+                # Try to get specific output for this run
+                specific_output = f"gs://{self.bucket_name}/output/customer_dimension_{self.timestamp}/"
+                try:
+                    specific_files = self.run_command(f"gcloud storage ls {specific_output}")
+                    logger.info(f"Files for this run ({self.timestamp}):")
+                    print(specific_files)
+                except:
+                    logger.info(f"No specific output found at {specific_output}")
+                    
+            except Exception as e:
+                logger.warning(f"Could not list output files: {e}")
             
             return True
         except Exception as e:
             logger.error(f"Error retrieving job output: {e}")
+            return False
+
+    def download_and_verify_results(self):
+        """Download and verify a sample of the results"""
+        try:
+            logger.info("Downloading and verifying results...")
+            
+            # Try to download the first part file from the output
+            output_base = f"gs://{self.bucket_name}/output/customer_dimension_{self.timestamp}/"
+            local_file = f"cloud_results_{self.timestamp}.csv"
+            
+            try:
+                # List files in the output directory
+                files = self.run_command(f"gcloud storage ls {output_base}")
+                
+                # Find the first CSV part file
+                for line in files.split('\n'):
+                    if line.strip().endswith('.csv') and 'part-' in line:
+                        part_file = line.strip()
+                        logger.info(f"Downloading result file: {part_file}")
+                        
+                        # Download the file
+                        self.run_command(f"gcloud storage cp {part_file} {local_file}")
+                        
+                        # Show first few lines
+                        logger.info("Sample of results:")
+                        result = self.run_command(f"head -10 {local_file}")
+                        print(result)
+                        
+                        # Count rows
+                        row_count = self.run_command(f"wc -l {local_file}")
+                        logger.info(f"Result file contains: {row_count}")
+                        
+                        logger.info(f"Results downloaded to: {local_file}")
+                        return True
+                        
+                logger.warning("No CSV part files found in output")
+                return False
+                        
+            except Exception as e:
+                logger.warning(f"Could not download results: {e}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error downloading and verifying results: {e}")
             return False
 
     def cleanup(self):
@@ -296,11 +374,18 @@ class DataprocDeployer:
             if not job_id:
                 return False
             
+            # Store job_id for final summary
+            self.actual_job_id = job_id
+            
             if not self.monitor_job(job_id):
                 return False
             
             if not self.get_job_output(job_id):
                 return False
+            
+            # Download and verify results
+            if not self.download_and_verify_results():
+                logger.warning("Could not download results, but job completed successfully")
             
             logger.info("Deployment completed successfully!")
             
@@ -329,8 +414,10 @@ def main():
         print(f"Project ID: {deployer.project_id}")
         print(f"Region: {deployer.region}")
         print(f"Cluster: {deployer.cluster_name}")
+        print(f"Job ID: {getattr(deployer, 'actual_job_id', 'N/A')}")
+        print(f"Timestamp: {deployer.timestamp}")
         print(f"Bucket: gs://{deployer.bucket_name}")
-        print(f"Output: gs://{deployer.bucket_name}/output/")
+        print(f"Output: gs://{deployer.bucket_name}/output/customer_dimension_{deployer.timestamp}/")
         print("="*50)
         sys.exit(0)
     else:
