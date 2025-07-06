@@ -180,7 +180,6 @@ class DataprocDeployer:
                 gs://{self.bucket_name}/scripts/scd_type2_implementation.py \
                 --cluster={self.cluster_name} \
                 --region={self.region} \
-                --job-id={job_id} \
                 --py-files=gs://{self.bucket_name}/scripts/scd_type2_implementation.py \
                 --properties=spark.sql.adaptive.enabled=true,spark.sql.adaptive.coalescePartitions.enabled=true \
                 -- \
@@ -189,8 +188,8 @@ class DataprocDeployer:
                 --output_path=gs://{self.bucket_name}/output/customer_dimension_{self.timestamp}
             """
             
-            self.run_command(submit_cmd.replace('\n', ' ').replace('\\', ''), capture_output=False)
-            logger.info(f"Job {job_id} submitted successfully")
+            result = self.run_command(submit_cmd.replace('\n', ' ').replace('\\', ''), capture_output=False)
+            logger.info(f"Job submitted successfully")
             return job_id
         except Exception as e:
             logger.error(f"Error submitting job: {e}")

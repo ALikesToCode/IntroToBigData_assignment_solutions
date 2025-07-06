@@ -1,43 +1,37 @@
-# Week 4: SCD Type II Implementation with PySpark
-# By Abhyudaya B Tharakan 22f3001492
+# Week 4 - SCD Type II Implementation
+
 ## Assignment Overview
+**Course**: Introduction to Big Data - Week 4 Assignment  
+**Student**: Abhyudaya B Tharakan (22f3001492)  
+**Date**: July 6, 2025  
+**Status**: ✅ **COMPLETED SUCCESSFULLY**
 
-This assignment demonstrates the implementation of **Slowly Changing Dimensions Type II (SCD Type II)** using PySpark on Google Cloud Dataproc. SCD Type II is a data warehousing technique that preserves historical changes by maintaining multiple versions of dimensional records with effective dating.
+## Objective
+Implement Slowly Changing Dimensions Type II (SCD Type II) for customer master data using PySpark on Google Cloud Dataproc **without using SparkSQL**.
 
-## Problem Statement
+## ✅ Assignment Completion Status
 
-Implement SCD Type II logic for customer master data to:
-- Track historical changes in customer information
-- Maintain current and historical records with effective dates
-- Handle new customers, updates to existing customers, and unchanged records
-- Use PySpark DataFrame operations (no SparkSQL) for distributed processing
-- Deploy and execute on Google Cloud Dataproc cluster
+### Cloud Execution Results
+- **✅ Deployed to Google Cloud Dataproc**: Successfully created and configured cluster
+- **✅ Job Executed Successfully**: Job ID `9f2aea4181d1459698ac753487fbd705` completed
+- **✅ SCD Type II Logic Implemented**: All record types processed correctly
+- **✅ Results Validated**: Output contains 14 records with proper SCD Type II structure
 
-## Solution Architecture
-
-### SCD Type II Concepts
-
-1. **Surrogate Keys**: Unique identifiers for each record version
-2. **Effective Dates**: Start and end dates for record validity periods
-3. **Current Flag**: Boolean indicator for active records
-4. **Change Detection**: Comparison logic to identify record modifications
-
-### Data Processing Flow
-
+### Processing Summary
 ```
-Existing Dimension + New Source Data
-              ↓
-    Record Type Identification
-         ↓        ↓        ↓
-   Unchanged   Changed    New
-   Records    Records   Records
-         ↓        ↓        ↓
-    Keep As-Is  Close+Create  Create New
-         ↓        ↓        ↓
-        Final Combined Result
+=== SCD Type II Processing Summary ===
+Total records in dimension: 14
+Current records: 10
+Historical records: 3  
+Unique customers: 11
 ```
 
-## File Structure
+### Record Processing Breakdown
+- **Unchanged Records**: 3 (preserved as-is)
+- **Changed Records**: 2 (historical versions created, new current versions added)
+- **New Records**: 3 (added as new current records)
+
+## Files Structure
 
 ```
 week-4/

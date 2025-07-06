@@ -3,27 +3,25 @@
 SCD Type II Implementation using PySpark
 Course: Introduction to Big Data - Week 4 Assignment
 
-This script implements Slowly Changing Dimensions Type II logic for customer master data
-using PySpark DataFrame operations (no SparkSQL).
+This script implements Slowly Changing Dimensions Type II (SCD Type II) 
+for customer master data using PySpark without SQL.
 
 Author: Abhyudaya B Tharakan 22f3001492
 Date: July 2025
 """
 
 import sys
+import logging
+from datetime import datetime, date
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col, lit, when, max as spark_max, row_number, coalesce, 
-    date_format, to_date, current_date, trim
-)
+from pyspark.sql.functions import col, when, lit, max as spark_max, row_number, trim, coalesce, to_date
 from pyspark.sql.types import (
-    StructType, StructField, StringType, IntegerType, BooleanType, DateType
+    StructType, StructField, StringType, IntegerType, DateType, BooleanType
 )
 from pyspark.sql.window import Window
-import logging
 
 def setup_logging():
-    """Configure logging for the application"""
+    """Setup logging configuration"""
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
@@ -299,23 +297,46 @@ def print_summary(final_df):
     print(f"Unique customers: {unique_customers}")
 
 def main():
-    """Main execution function"""
+    """Main function to orchestrate SCD Type II implementation"""
     logger = setup_logging()
     logger.info("Starting SCD Type II implementation")
     
-    # Parse command line arguments
-    if len(sys.argv) != 4:
-        print("Usage: python scd_type2_implementation.py <existing_data_path> <new_data_path> <output_path>")
-        sys.exit(1)
-    
-    existing_data_path = sys.argv[1]
-    new_data_path = sys.argv[2]
-    output_path = sys.argv[3]
-    
-    # Create Spark session
-    spark = create_spark_session()
+    # Initialize Spark session
+    spark = SparkSession.builder \
+        .appName("SCD Type II Customer Dimension") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+        .getOrCreate()
     
     try:
+        # Parse command line arguments
+        args = sys.argv[1:]  # Skip script name
+        
+        # Default paths for local testing
+        existing_data_path = "data/customer_existing.csv"
+        new_data_path = "data/customer_new.csv"
+        output_path = "output/customer_dimension_updated"
+        
+        # Parse arguments
+        i = 0
+        while i < len(args):
+            if args[i] == '--existing_data_path' and i + 1 < len(args):
+                existing_data_path = args[i + 1]
+                i += 2
+            elif args[i] == '--new_data_path' and i + 1 < len(args):
+                new_data_path = args[i + 1]
+                i += 2
+            elif args[i] == '--output_path' and i + 1 < len(args):
+                output_path = args[i + 1]
+                i += 2
+            else:
+                i += 1
+        
+        logger.info(f"Using paths:")
+        logger.info(f"  Existing data: {existing_data_path}")
+        logger.info(f"  New data: {new_data_path}")
+        logger.info(f"  Output: {output_path}")
+        
         # Load data
         existing_df = load_existing_data(spark, existing_data_path)
         new_df = load_new_data(spark, new_data_path)
@@ -353,18 +374,14 @@ def main():
         # Save results
         save_results(final_df, output_path)
         
-        # Print summary
+        # Display summary
         print_summary(final_df)
-        
-        # Show sample of final results
-        print("\n=== Sample of Final Results ===")
-        final_df.show(20, truncate=False)
         
         logger.info("SCD Type II implementation completed successfully")
         
     except Exception as e:
-        logger.error(f"Error in main execution: {str(e)}")
-        raise
+        logger.error(f"Error in main execution: {e}")
+        raise e
     finally:
         spark.stop()
 
