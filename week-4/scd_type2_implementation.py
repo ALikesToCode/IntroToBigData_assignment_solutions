@@ -165,42 +165,48 @@ def process_unchanged_records(unchanged_df):
     return unchanged_df
 
 def process_changed_records(changed_df, existing_df, source_date):
-    """
-    Process changed records using SCD Type II:
-    1. Close current record (set end date, is_current = false)
-    2. Create new record with changes
-    """
+    """Process records that have changed attributes"""
     logger = logging.getLogger(__name__)
     logger.info("Processing changed records...")
     
-    # Get customer IDs that have changes
+    if changed_df.count() == 0:
+        return existing_df.limit(0), existing_df.limit(0)
+    
+    # Close existing records for customers that changed
     changed_customer_ids = changed_df.select("curr.customer_id").distinct().rdd.map(lambda row: row[0]).collect()
     
-    # Close current records for changed customers
     closed_records = existing_df.filter(
-        (col("customer_id").isin(changed_customer_ids)) & (col("is_current") == True)
+        col("customer_id").isin(changed_customer_ids) & 
+        (col("is_current") == True)
     ).withColumn("effective_end_date", lit(source_date).cast(DateType())) \
-     .withColumn("is_current", lit(False))
+     .withColumn("is_current", lit(False).cast(BooleanType()))
     
     # Get next surrogate key
     next_key = get_next_surrogate_key(existing_df)
     
-    # Create new records for changed customers
-    window_spec = Window.orderBy("customer_id")
-    new_changed_records = changed_df.select(
-        "new.customer_id",
-        "new.customer_name", 
-        "new.address",
-        "new.phone",
-        "new.email",
-        "new.source_date"
-    ).withColumn(
+    # Create new records for changed customers with explicit type casting
+    new_data_subset = changed_df.select(
+        col("new.customer_id").cast(IntegerType()).alias("customer_id"),
+        col("new.customer_name").cast(StringType()).alias("customer_name"), 
+        col("new.address").cast(StringType()).alias("address"),
+        col("new.phone").cast(StringType()).alias("phone"),
+        col("new.email").cast(StringType()).alias("email"),
+        col("new.source_date").alias("source_date")
+    )
+    
+    # Add sequential row numbers for surrogate key generation
+    new_data_with_row_num = new_data_subset.rdd.zipWithIndex().map(
+        lambda x: x[0] + (x[1] + 1,)
+    ).toDF(new_data_subset.columns + ["row_num"])
+    
+    # Generate surrogate keys using row numbers instead of window functions
+    new_changed_records = new_data_with_row_num.withColumn(
         "customer_key", 
-        lit(next_key) + row_number().over(window_spec) - 1
+        (lit(next_key).cast(IntegerType()) + col("row_num").cast(IntegerType()) - lit(1)).cast(IntegerType())
     ).withColumn("effective_start_date", col("source_date").cast(DateType())) \
      .withColumn("effective_end_date", lit("9999-12-31").cast(DateType())) \
-     .withColumn("is_current", lit(True)) \
-     .drop("source_date")
+     .withColumn("is_current", lit(True).cast(BooleanType())) \
+     .drop("source_date", "row_num")
     
     return closed_records, new_changed_records
 
@@ -215,17 +221,29 @@ def process_new_records(new_records_df, existing_df):
     # Get next surrogate key
     next_key = get_next_surrogate_key(existing_df)
     
-    # Create window for row numbering
-    window_spec = Window.orderBy("customer_id")
+    # Cast columns explicitly to avoid type confusion
+    new_data_typed = new_records_df.select(
+        col("customer_id").cast(IntegerType()).alias("customer_id"),
+        col("customer_name").cast(StringType()).alias("customer_name"),
+        col("address").cast(StringType()).alias("address"),
+        col("phone").cast(StringType()).alias("phone"),
+        col("email").cast(StringType()).alias("email"),
+        col("source_date").alias("source_date")
+    )
     
-    # Create new records with surrogate keys
-    processed_new_records = new_records_df.withColumn(
+    # Add sequential row numbers for surrogate key generation
+    new_data_with_row_num = new_data_typed.rdd.zipWithIndex().map(
+        lambda x: x[0] + (x[1] + 1,)
+    ).toDF(new_data_typed.columns + ["row_num"])
+    
+    # Create new records with surrogate keys using row numbers
+    processed_new_records = new_data_with_row_num.withColumn(
         "customer_key", 
-        lit(next_key) + row_number().over(window_spec) - 1
+        (lit(next_key).cast(IntegerType()) + col("row_num").cast(IntegerType()) - lit(1)).cast(IntegerType())
     ).withColumn("effective_start_date", col("source_date").cast(DateType())) \
      .withColumn("effective_end_date", lit("9999-12-31").cast(DateType())) \
-     .withColumn("is_current", lit(True)) \
-     .drop("source_date")
+     .withColumn("is_current", lit(True).cast(BooleanType())) \
+     .drop("source_date", "row_num")
     
     return processed_new_records
 
@@ -234,25 +252,46 @@ def combine_results(unchanged_df, closed_df, new_changed_df, new_df, existing_df
     logger = logging.getLogger(__name__)
     logger.info("Combining all processed records...")
     
-    # Start with unchanged records
-    result_df = unchanged_df
+    # Define the expected schema for all DataFrames
+    expected_columns = [
+        "customer_key", "customer_id", "customer_name", "address", "phone", "email",
+        "effective_start_date", "effective_end_date", "is_current"
+    ]
+    
+    # Normalize schema for all DataFrames
+    def normalize_schema(df):
+        return df.select(
+            col("customer_key").cast(IntegerType()).alias("customer_key"),
+            col("customer_id").cast(IntegerType()).alias("customer_id"),
+            col("customer_name").cast(StringType()).alias("customer_name"),
+            col("address").cast(StringType()).alias("address"),
+            col("phone").cast(StringType()).alias("phone"),
+            col("email").cast(StringType()).alias("email"),
+            col("effective_start_date").cast(DateType()).alias("effective_start_date"),
+            col("effective_end_date").cast(DateType()).alias("effective_end_date"),
+            col("is_current").cast(BooleanType()).alias("is_current")
+        )
+    
+    # Start with unchanged records (normalize schema)
+    result_df = normalize_schema(unchanged_df)
     
     # Add records for customers that didn't change
     unchanged_customer_ids = unchanged_df.select("customer_id").distinct().rdd.map(lambda row: row[0]).collect()
     other_existing = existing_df.filter(~col("customer_id").isin(unchanged_customer_ids))
-    result_df = result_df.union(other_existing)
+    if other_existing.count() > 0:
+        result_df = result_df.union(normalize_schema(other_existing))
     
     # Add closed records
     if closed_df.count() > 0:
-        result_df = result_df.union(closed_df)
+        result_df = result_df.union(normalize_schema(closed_df))
     
     # Add new records for changed customers
     if new_changed_df.count() > 0:
-        result_df = result_df.union(new_changed_df)
+        result_df = result_df.union(normalize_schema(new_changed_df))
     
     # Add completely new customer records
     if new_df.count() > 0:
-        result_df = result_df.union(new_df)
+        result_df = result_df.union(normalize_schema(new_df))
     
     # Sort by customer_id and effective_start_date for better readability
     result_df = result_df.orderBy("customer_id", "effective_start_date")
@@ -266,7 +305,19 @@ def save_results(df, output_path):
     logger.info(f"Saving results to: {output_path}")
     
     try:
-        df.coalesce(1).write \
+        # Debug: Print schema and column info before processing
+        logger.info("Final DataFrame schema:")
+        df.printSchema()
+        logger.info(f"Final DataFrame columns: {df.columns}")
+        logger.info(f"Final DataFrame count: {df.count()}")
+        
+        # Show a sample of the data
+        logger.info("Sample of final data:")
+        df.show(5, truncate=False)
+        
+        # Save the DataFrame (schema is already normalized in combine_results)
+        logger.info("Saving DataFrame to CSV...")
+        df.write \
             .mode("overwrite") \
             .option("header", "true") \
             .csv(output_path)
