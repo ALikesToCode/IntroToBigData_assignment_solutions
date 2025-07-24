@@ -23,7 +23,7 @@ class DataprocDeployer:
         self.project_id = None
         self.region = "us-central1"
         self.zone = "us-central1-b"
-        self.cluster_name = "sparksql-scd-type2-cluster"
+        self.cluster_name = "spark-click-analysis-cluster"
         self.bucket_name = None
         self.timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         
@@ -133,42 +133,64 @@ class DataprocDeployer:
             logger.error(f"Error uploading files: {e}")
             return False
 
-    def create_cluster(self):
-        """Create Dataproc cluster"""
+    def verify_existing_cluster(self):
+        """Verify existing Dataproc cluster is available"""
         try:
-            # Check if cluster exists
+            logger.info(f"Verifying existing cluster: {self.cluster_name}")
+            
+            # Check if cluster exists and get its status
             try:
-                result = self.run_command(
-                    f"gcloud dataproc clusters describe {self.cluster_name} --region={self.region}"
+                status = self.run_command(
+                    f"gcloud dataproc clusters describe {self.cluster_name} --region={self.region} --format='value(status.state)'"
                 )
-                logger.info(f"Cluster {self.cluster_name} already exists")
-                return True
-            except:
-                pass
-            
-            # Create cluster with minimal resources to fit quota
-            logger.info(f"Creating Dataproc cluster: {self.cluster_name}")
-            create_cmd = f"""
-            gcloud dataproc clusters create {self.cluster_name} \
-                --region={self.region} \
-                --zone={self.zone} \
-                --master-machine-type=e2-standard-2 \
-                --worker-machine-type=e2-standard-2 \
-                --num-workers=2 \
-                --master-boot-disk-size=50GB \
-                --worker-boot-disk-size=50GB \
-                --image-version=2.0-debian10 \
-                --initialization-actions=gs://goog-dataproc-initialization-actions-us-central1/python/pip-install.sh \
-                --metadata=PIP_PACKAGES=pandas \
-                --max-idle=10m
-            """
-            
-            self.run_command(create_cmd.replace('\n', ' ').replace('\\', ''))
-            logger.info(f"Cluster {self.cluster_name} created successfully")
-            return True
+                
+                if status == "RUNNING":
+                    logger.info(f"✅ Existing cluster {self.cluster_name} is running and ready")
+                    return True
+                elif status in ["CREATING", "STARTING"]:
+                    logger.info(f"Cluster {self.cluster_name} is {status.lower()}, waiting for it to be ready...")
+                    return self.wait_for_cluster_ready()
+                else:
+                    logger.warning(f"Cluster {self.cluster_name} is in state: {status}")
+                    logger.info("Attempting to use cluster anyway...")
+                    return True
+                    
+            except subprocess.CalledProcessError as e:
+                if "NOT_FOUND" in str(e) or "does not exist" in str(e):
+                    logger.error(f"❌ Cluster {self.cluster_name} not found!")
+                    logger.error("Please make sure the cluster exists and is in the correct region.")
+                    return False
+                else:
+                    logger.error(f"Error checking cluster status: {e}")
+                    return False
+                    
         except Exception as e:
-            logger.error(f"Error creating cluster: {e}")
+            logger.error(f"Error verifying cluster: {e}")
             return False
+            
+    def wait_for_cluster_ready(self, max_wait_minutes=10):
+        """Wait for cluster to be in RUNNING state"""
+        max_attempts = max_wait_minutes * 2  # Check every 30 seconds
+        
+        for attempt in range(max_attempts):
+            try:
+                status = self.run_command(
+                    f"gcloud dataproc clusters describe {self.cluster_name} --region={self.region} --format='value(status.state)'"
+                )
+                
+                if status == "RUNNING":
+                    logger.info("✅ Cluster is now ready")
+                    return True
+                else:
+                    logger.info(f"Cluster state: {status} - waiting...")
+                    time.sleep(30)
+                    
+            except Exception as e:
+                logger.warning(f"Error checking cluster state: {e}")
+                time.sleep(30)
+        
+        logger.warning(f"Cluster did not become ready within {max_wait_minutes} minutes, proceeding anyway...")
+        return True  # Proceed even if we can't confirm it's ready
 
     def submit_job(self):
         """Submit SparkSQL PySpark job to Dataproc cluster"""
@@ -426,7 +448,7 @@ class DataprocDeployer:
             if not self.upload_files():
                 return False
             
-            if not self.create_cluster():
+            if not self.verify_existing_cluster():
                 return False
             
             # Submit and monitor job
@@ -448,13 +470,7 @@ class DataprocDeployer:
                 logger.warning("Could not download results, but job completed successfully")
             
             logger.info("Deployment completed successfully!")
-            
-            # Ask about cleanup
-            cleanup_choice = input("\nDo you want to clean up resources (delete cluster)? (y/n): ")
-            if cleanup_choice.lower() == 'y':
-                self.cleanup()
-            else:
-                logger.info(f"Cluster {self.cluster_name} left running. Don't forget to delete it later!")
+            logger.info(f"Used existing cluster: {self.cluster_name} (left running)")
             
             return True
             
