@@ -427,23 +427,15 @@ class Week6CloudDeployment:
         
         vm_name = f"week6-subscriber-vm-{self.timestamp}"
         
-        # Create VM instance
-        create_vm_cmd = f"""
-        gcloud compute instances create {vm_name} \\
-            --zone={self.region}-b \\
-            --machine-type=e2-medium \\
-            --boot-disk-size=20GB \\
-            --boot-disk-type=pd-standard \\
-            --image-family=debian-11 \\
-            --image-project=debian-cloud \\
-            --scopes=https://www.googleapis.com/auth/cloud-platform \\
-            --metadata=startup-script='#!/bin/bash
-        apt-get update
-        apt-get install -y python3 python3-pip git
-        pip3 install google-cloud-pubsub google-cloud-storage
-        
-        # Create subscriber script
-        cat > /home/subscriber.py << \"EOF\"
+        # Create VM instance - use string format to avoid f-string conflicts
+        # Create the complete startup script
+        startup_script = f'''#!/bin/bash
+apt-get update
+apt-get install -y python3 python3-pip git
+pip3 install google-cloud-pubsub google-cloud-storage
+
+# Create subscriber script
+cat > /home/subscriber.py << "EOF"
 #!/usr/bin/env python3
 import time
 import json
@@ -461,44 +453,44 @@ def count_lines_in_file(bucket_name, file_name):
         blob = bucket.blob(file_name)
         
         if not blob.exists():
-            logger.error(f\"File not found: gs://{bucket_name}/{file_name}\")
+            logger.error(f"File not found: gs://{{bucket_name}}/{{file_name}}")
             return None
         
         content = blob.download_as_text()
         line_count = len(content.splitlines())
         
-        print(f\"\\n{'='*60}\")
-        print(f\"📄 FILE PROCESSED: {file_name}\")
-        print(f\"📊 LINE COUNT: {line_count:,}\")
-        print(f\"📏 FILE SIZE: {blob.size:,} bytes\")
-        print(f\"{'='*60}\\n\")
+        print(f"\\n{{'='*60}}")
+        print(f"📄 FILE PROCESSED: {{file_name}}")
+        print(f"📊 LINE COUNT: {{line_count:,}}")
+        print(f"📏 FILE SIZE: {{blob.size:,}} bytes")
+        print(f"{{'='*60}}\\n")
         
         return line_count
     except Exception as e:
-        logger.error(f\"Error processing file: {e}\")
+        logger.error(f"Error processing file: {{e}}")
         return None
 
 def process_message(message):
     try:
-        data = json.loads(message.data.decode(\"utf-8\"))
-        bucket_name = data.get(\"bucket_name\")
-        file_name = data.get(\"file_name\")
+        data = json.loads(message.data.decode("utf-8"))
+        bucket_name = data.get("bucket_name")
+        file_name = data.get("file_name")
         
         if bucket_name and file_name:
             count_lines_in_file(bucket_name, file_name)
         
         message.ack()
     except Exception as e:
-        logger.error(f\"Error processing message: {e}\")
+        logger.error(f"Error processing message: {{e}}")
 
 def main():
-    project_id = \"{self.project_id}\"
-    subscription_name = \"{self.subscription_name}\"
+    project_id = "{self.project_id}"
+    subscription_name = "{self.subscription_name}"
     
     subscriber = pubsub_v1.SubscriberClient()
     subscription_path = subscriber.subscription_path(project_id, subscription_name)
     
-    logger.info(f\"Listening for messages on {subscription_path}\")
+    logger.info(f"Listening for messages on {{subscription_path}}")
     
     streaming_pull_future = subscriber.subscribe(subscription_path, callback=process_message)
     
@@ -508,14 +500,14 @@ def main():
         streaming_pull_future.cancel()
         streaming_pull_future.result()
 
-if __name__ == \"__main__\": 
+if __name__ == "__main__": 
     main()
 EOF
 
-        chmod +x /home/subscriber.py
-        
-        # Start subscriber as a service
-        cat > /etc/systemd/system/subscriber.service << \"EOF\"
+chmod +x /home/subscriber.py
+
+# Create systemd service
+cat > /etc/systemd/system/subscriber.service << "EOF"
 [Unit]
 Description=Week 6 Pub/Sub Subscriber
 After=network.target
@@ -532,10 +524,21 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-        systemctl daemon-reload
-        systemctl enable subscriber
-        systemctl start subscriber
-        '
+systemctl daemon-reload
+systemctl enable subscriber
+systemctl start subscriber
+'''
+
+        create_vm_cmd = f"""
+        gcloud compute instances create {vm_name} \\
+            --zone={self.region}-b \\
+            --machine-type=e2-medium \\
+            --boot-disk-size=20GB \\
+            --boot-disk-type=pd-standard \\
+            --image-family=debian-11 \\
+            --image-project=debian-cloud \\
+            --scopes=https://www.googleapis.com/auth/cloud-platform \\
+            --metadata=startup-script='{startup_script}'
         """
         
         self.run_command(create_vm_cmd, f"Creating VM: {vm_name}")
