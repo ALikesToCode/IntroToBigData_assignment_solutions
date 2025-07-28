@@ -1,0 +1,5 @@
+Line 1: Testing the real pipeline
+  Line 2: This file will trigger the Cloud Function
+  Line 3: Which publishes to Pub/Sub
+  Line 4: For real-time processing
+  Line 5: Complete end-to-end workflow

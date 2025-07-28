@@ -132,11 +132,11 @@ class Week6CloudDeployment:
     
     def enable_apis(self):
         """
-        Enable required Google Cloud APIs.
+        Enable required Google Cloud APIs (or check if already enabled).
         """
         apis = [
             'cloudfunctions.googleapis.com',
-            'pubsub.googleapis.com',
+            'pubsub.googleapis.com', 
             'storage.googleapis.com',
             'cloudbuild.googleapis.com',
             'logging.googleapis.com',
@@ -144,14 +144,39 @@ class Week6CloudDeployment:
             'iam.googleapis.com'
         ]
         
-        logger.info("🔌 Enabling required APIs...")
+        logger.info("🔌 Checking/enabling required APIs...")
         
         for api in apis:
-            self.run_command(f"gcloud services enable {api}", f"Enabling {api}")
-            time.sleep(2)  # Rate limiting
+            # First check if API is already enabled
+            check_result = self.run_command(
+                f"gcloud services list --enabled --filter='name:{api}' --format='value(name)'",
+                f"Checking if {api} is enabled",
+                check=False
+            )
+            
+            if api in check_result.stdout:
+                logger.info(f"ℹ️ {api} is already enabled")
+            else:
+                # Try to enable the API
+                enable_result = self.run_command(
+                    f"gcloud services enable {api}", 
+                    f"Enabling {api}",
+                    check=False
+                )
+                
+                if enable_result.returncode != 0:
+                    if "PERMISSION_DENIED" in enable_result.stderr:
+                        logger.warning(f"⚠️ No permission to enable {api} - assuming it's already enabled")
+                        logger.warning(f"   If deployment fails, please manually enable {api}")
+                    else:
+                        logger.error(f"❌ Failed to enable {api}: {enable_result.stderr}")
+                        raise subprocess.CalledProcessError(enable_result.returncode, f"gcloud services enable {api}")
+                else:
+                    logger.info(f"✅ Successfully enabled {api}")
+                    time.sleep(2)  # Rate limiting
         
-        logger.info("✅ APIs enabled")
-        time.sleep(10)  # Wait for API propagation
+        logger.info("✅ API check completed")
+        time.sleep(5)  # Brief wait for any changes to propagate
     
     def create_gcs_bucket(self):
         """
@@ -161,7 +186,7 @@ class Week6CloudDeployment:
         
         # Check if bucket exists
         result = self.run_command(
-            f"gsutil ls gs://{self.bucket_name}",
+            f"gcloud storage ls gs://{self.bucket_name}",
             "Checking if bucket exists",
             check=False
         )
@@ -171,13 +196,13 @@ class Week6CloudDeployment:
         else:
             # Create bucket
             self.run_command(
-                f"gsutil mb -p {self.project_id} -l {self.region} gs://{self.bucket_name}",
+                f"gcloud storage buckets create gs://{self.bucket_name} --location={self.region} --project={self.project_id}",
                 f"Creating bucket {self.bucket_name}"
             )
             
             # Set uniform bucket-level access
             self.run_command(
-                f"gsutil uniformbucketlevelaccess set on gs://{self.bucket_name}",
+                f"gcloud storage buckets update gs://{self.bucket_name} --uniform-bucket-level-access",
                 "Setting uniform bucket-level access"
             )
         
@@ -194,7 +219,7 @@ class Week6CloudDeployment:
         try:
             # Get the GCS service account for the project
             result = self.run_command(
-                f"gsutil kms serviceaccount -p {self.project_id}",
+                f"gcloud storage service-agent --project={self.project_id}",
                 "Getting GCS service account"
             )
             
@@ -215,14 +240,25 @@ class Week6CloudDeployment:
             )
             
             if f"serviceAccount:{gcs_service_account}" not in check_result.stdout:
-                # Grant pubsub.publisher role to GCS service account
-                self.run_command(
+                # Try to grant pubsub.publisher role to GCS service account
+                iam_result = self.run_command(
                     f"gcloud projects add-iam-policy-binding {self.project_id} "
                     f"--member='serviceAccount:{gcs_service_account}' "
                     f"--role='roles/pubsub.publisher'",
-                    "Granting Pub/Sub Publisher role to GCS service account"
+                    "Granting Pub/Sub Publisher role to GCS service account",
+                    check=False
                 )
-                logger.info("✅ Granted Pub/Sub Publisher role")
+                
+                if iam_result.returncode != 0:
+                    if "does not have permission" in iam_result.stderr:
+                        logger.warning("⚠️ No permission to modify IAM policies")
+                        logger.warning(f"   Please manually grant roles/pubsub.publisher to {gcs_service_account}")
+                        logger.warning("   Or ensure the IAM permission was already granted")
+                    else:
+                        logger.error(f"❌ Failed to grant IAM role: {iam_result.stderr}")
+                        raise subprocess.CalledProcessError(iam_result.returncode, "IAM policy binding")
+                else:
+                    logger.info("✅ Granted Pub/Sub Publisher role")
             else:
                 logger.info("ℹ️ Pub/Sub Publisher role already granted")
             
@@ -236,14 +272,25 @@ class Week6CloudDeployment:
             )
             
             if f"serviceAccount:{gcs_service_account}" not in check_result.stdout:
-                # Grant eventarc.eventReceiver role for completeness
-                self.run_command(
+                # Try to grant eventarc.eventReceiver role for completeness
+                iam_result = self.run_command(
                     f"gcloud projects add-iam-policy-binding {self.project_id} "
                     f"--member='serviceAccount:{gcs_service_account}' "
                     f"--role='roles/eventarc.eventReceiver'",
-                    "Granting Eventarc Event Receiver role to GCS service account"
+                    "Granting Eventarc Event Receiver role to GCS service account",
+                    check=False
                 )
-                logger.info("✅ Granted Eventarc Event Receiver role")
+                
+                if iam_result.returncode != 0:
+                    if "does not have permission" in iam_result.stderr:
+                        logger.warning("⚠️ No permission to modify IAM policies for eventarc role")
+                        logger.warning(f"   Please manually grant roles/eventarc.eventReceiver to {gcs_service_account}")
+                    else:
+                        logger.error(f"❌ Failed to grant eventarc IAM role: {iam_result.stderr}")
+                        # Don't fail deployment for this secondary role
+                        logger.warning("   Continuing deployment without eventarc role")
+                else:
+                    logger.info("✅ Granted Eventarc Event Receiver role")
             else:
                 logger.info("ℹ️ Eventarc Event Receiver role already granted")
             
@@ -257,7 +304,7 @@ class Week6CloudDeployment:
             logger.error(f"❌ Failed to configure IAM permissions: {e}")
             logger.error("   This may cause Cloud Functions GCS triggers to fail")
             logger.error("   Manual fix: Run the following commands:")
-            logger.error(f"   gsutil kms serviceaccount -p {self.project_id}")
+            logger.error(f"   gcloud storage service-agent --project={self.project_id}")
             logger.error("   gcloud projects add-iam-policy-binding PROJECT_ID \\")
             logger.error("     --member='serviceAccount:GCS_SERVICE_ACCOUNT' \\")
             logger.error("     --role='roles/pubsub.publisher'")
@@ -348,7 +395,7 @@ class Week6CloudDeployment:
         if data_dir.exists():
             for file_path in data_dir.glob("*.txt"):
                 gcs_path = f"gs://{self.bucket_name}/test-files/{file_path.name}"
-                self.run_command(f"gsutil cp {file_path} {gcs_path}", f"Uploading {file_path.name}")
+                self.run_command(f"gcloud storage cp {file_path} {gcs_path}", f"Uploading {file_path.name}")
         
         # Create additional test files
         test_files = [
@@ -365,7 +412,7 @@ class Week6CloudDeployment:
             
             # Upload to GCS
             gcs_path = f"gs://{self.bucket_name}/test-files/{filename}"
-            self.run_command(f"gsutil cp {temp_file} {gcs_path}", f"Uploading {filename}")
+            self.run_command(f"gcloud storage cp {temp_file} {gcs_path}", f"Uploading {filename}")
             
             # Clean up
             temp_file.unlink()
@@ -389,7 +436,7 @@ class Week6CloudDeployment:
         
         # Upload test file to trigger function
         gcs_path = f"gs://{self.bucket_name}/pipeline_test_{self.timestamp}.txt"
-        self.run_command(f"gsutil cp {test_file} {gcs_path}", "Uploading test file to trigger pipeline")
+        self.run_command(f"gcloud storage cp {test_file} {gcs_path}", "Uploading test file to trigger pipeline")
         
         # Wait for processing
         logger.info("⏳ Waiting for pipeline processing...")
@@ -618,7 +665,7 @@ systemctl start subscriber
         print(f"Subscriber VM: {vm_name}")
         print(f"\n📋 USAGE INSTRUCTIONS:")
         print(f"1. Upload files to trigger processing:")
-        print(f"   gsutil cp your_file.txt gs://{self.bucket_name}/")
+        print(f"   gcloud storage cp your_file.txt gs://{self.bucket_name}/")
         print(f"\n2. Monitor Cloud Function logs:")
         print(f"   gcloud functions logs read {self.function_name} --region={self.region}")
         print(f"\n3. Monitor subscriber VM:")
@@ -627,15 +674,15 @@ systemctl start subscriber
         print(f"\n4. Check Pub/Sub messages:")
         print(f"   gcloud pubsub subscriptions pull {self.subscription_name} --auto-ack")
         print(f"\n5. View uploaded test files:")
-        print(f"   gsutil ls gs://{self.bucket_name}/test-files/")
+        print(f"   gcloud storage ls gs://{self.bucket_name}/test-files/")
         print(f"\n🧪 TEST THE PIPELINE:")
         print(f"   echo 'Line 1\\nLine 2\\nLine 3' > test.txt")
-        print(f"   gsutil cp test.txt gs://{self.bucket_name}/")
+        print(f"   gcloud storage cp test.txt gs://{self.bucket_name}/")
         print(f"   # Watch the subscriber VM logs for real-time line counting!")
         print(f"\n🧹 CLEANUP WHEN DONE:")
         print(f"   gcloud compute instances delete {vm_name} --zone={self.region}-b")
         print(f"   gcloud functions delete {self.function_name} --region={self.region}")
-        print(f"   gsutil rm -r gs://{self.bucket_name}")
+        print(f"   gcloud storage rm -r gs://{self.bucket_name}")
         print(f"{'='*80}\n")
 
 def main():

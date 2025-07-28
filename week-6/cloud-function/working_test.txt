@@ -1,0 +1,5 @@
+Line 1: Testing the redeployed function
+Line 2: Should see detailed logs now
+Line 3: Real pipeline demonstration
+Line 4: Line counting test
+Line 5: End-to-end verification

@@ -14,18 +14,17 @@ from google.cloud import pubsub_v1
 import json
 import logging
 import os
+import traceback
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Pub/Sub publisher client
-publisher = pubsub_v1.PublisherClient()
-
-# Get project ID and topic name from environment variables
-PROJECT_ID = os.environ.get('GCP_PROJECT', 'your-project-id')
+# Get environment variables
+PROJECT_ID = os.environ.get('GCP_PROJECT', 'steady-triumph-447006-f8')
 TOPIC_NAME = os.environ.get('PUBSUB_TOPIC', 'file-processing-topic')
-TOPIC_PATH = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
+
+logger.info(f"Function initialized - Project: {PROJECT_ID}, Topic: {TOPIC_NAME}")
 
 @functions_framework.cloud_event
 def process_file_upload(cloud_event):
@@ -35,28 +34,40 @@ def process_file_upload(cloud_event):
     Args:
         cloud_event: CloudEvent object containing event data
     """
+    logger.info("=== CLOUD FUNCTION TRIGGERED ===")
+    
     try:
+        # Log the entire event for debugging
+        logger.info(f"Event type: {cloud_event.get('type', 'unknown')}")
+        logger.info(f"Event data: {cloud_event.data}")
+        
         # Extract event data
         event_data = cloud_event.data
         
         # Get file information from the event
         bucket_name = event_data.get('bucket', '')
         file_name = event_data.get('name', '')
-        event_type = event_data.get('eventType', '')
+        event_type = event_data.get('eventType', cloud_event.get('type', ''))
         time_created = event_data.get('timeCreated', '')
         
-        logger.info(f"Processing event: {event_type}")
-        logger.info(f"File: gs://{bucket_name}/{file_name}")
+        logger.info(f"Processing file: gs://{bucket_name}/{file_name}")
+        logger.info(f"Event type: {event_type}")
         
         # Only process file creation/upload events
-        if 'finalize' not in event_type.lower():
+        if 'finalize' not in event_type.lower() and 'create' not in event_type.lower():
             logger.info(f"Ignoring event type: {event_type}")
-            return
+            return {"status": "ignored", "reason": f"Event type {event_type} not processed"}
         
         # Skip processing for directories or system files
         if file_name.endswith('/') or file_name.startswith('.'):
             logger.info(f"Skipping directory or system file: {file_name}")
-            return
+            return {"status": "skipped", "reason": "Directory or system file"}
+        
+        # Initialize Pub/Sub publisher
+        publisher = pubsub_v1.PublisherClient()
+        topic_path = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
+        
+        logger.info(f"Publishing to topic: {topic_path}")
         
         # Create message payload
         message_data = {
@@ -65,52 +76,59 @@ def process_file_upload(cloud_event):
             'event_type': event_type,
             'time_created': time_created,
             'file_path': f"gs://{bucket_name}/{file_name}",
-            'processing_request': 'line_count'
+            'processing_request': 'line_count',
+            'function_triggered_at': time_created
         }
         
         # Convert message to JSON bytes
         message_json = json.dumps(message_data)
         message_bytes = message_json.encode('utf-8')
         
+        logger.info(f"Message to publish: {message_json}")
+        
         # Publish message to Pub/Sub topic
-        future = publisher.publish(TOPIC_PATH, message_bytes)
+        future = publisher.publish(topic_path, message_bytes)
         message_id = future.result()
         
-        logger.info(f"Message published successfully with ID: {message_id}")
-        logger.info(f"Message content: {message_json}")
+        logger.info(f"✅ Message published successfully with ID: {message_id}")
         
-        return {
+        result = {
             'status': 'success',
             'message_id': message_id,
-            'file_processed': f"gs://{bucket_name}/{file_name}"
+            'file_processed': f"gs://{bucket_name}/{file_name}",
+            'topic': topic_path
         }
         
-    except Exception as e:
-        logger.error(f"Error processing file upload: {str(e)}")
-        logger.error(f"Event data: {cloud_event.data}")
+        logger.info(f"Function completed successfully: {result}")
+        return result
         
-        # Re-raise the exception to trigger retry if needed
-        raise e
+    except Exception as e:
+        error_msg = f"Error processing file upload: {str(e)}"
+        logger.error(error_msg)
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Event data: {cloud_event.data if hasattr(cloud_event, 'data') else 'No data'}")
+        
+        # Return error but don't re-raise to avoid infinite retries
+        return {
+            'status': 'error',
+            'error': error_msg,
+            'event_data': str(cloud_event.data) if hasattr(cloud_event, 'data') else 'No data'
+        }
 
-def validate_environment():
-    """
-    Validate that required environment variables are set.
-    """
-    required_vars = ['GCP_PROJECT', 'PUBSUB_TOPIC']
-    missing_vars = []
+# Test function to verify environment
+def test_environment():
+    """Test function to verify environment variables."""
+    logger.info("=== TESTING ENVIRONMENT ===")
+    logger.info(f"PROJECT_ID: {PROJECT_ID}")
+    logger.info(f"TOPIC_NAME: {TOPIC_NAME}")
     
-    for var in required_vars:
-        if not os.environ.get(var):
-            missing_vars.append(var)
-    
-    if missing_vars:
-        raise ValueError(f"Missing required environment variables: {missing_vars}")
+    try:
+        publisher = pubsub_v1.PublisherClient()
+        topic_path = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
+        logger.info(f"Topic path: {topic_path}")
+        logger.info("✅ Environment test successful")
+    except Exception as e:
+        logger.error(f"❌ Environment test failed: {e}")
 
-# Validate environment on module load
-try:
-    validate_environment()
-    logger.info(f"Cloud Function initialized for project: {PROJECT_ID}")
-    logger.info(f"Publishing to topic: {TOPIC_PATH}")
-except ValueError as e:
-    logger.warning(f"Environment validation warning: {e}")
-    logger.warning("Using default values - ensure proper configuration for deployment")
+# Run environment test on import
+test_environment()
