@@ -427,15 +427,14 @@ class Week6CloudDeployment:
         
         vm_name = f"week6-subscriber-vm-{self.timestamp}"
         
-        # Create VM instance - use string format to avoid f-string conflicts
-        # Create the complete startup script
-        startup_script = f'''#!/bin/bash
+        # Create startup script file to avoid gcloud metadata parsing issues
+        startup_script_content = f'''#!/bin/bash
 apt-get update
 apt-get install -y python3 python3-pip git
 pip3 install google-cloud-pubsub google-cloud-storage
 
 # Create subscriber script
-cat > /home/subscriber.py << "EOF"
+cat > /home/subscriber.py << 'EOF'
 #!/usr/bin/env python3
 import time
 import json
@@ -507,7 +506,7 @@ EOF
 chmod +x /home/subscriber.py
 
 # Create systemd service
-cat > /etc/systemd/system/subscriber.service << "EOF"
+cat > /etc/systemd/system/subscriber.service << 'EOF'
 [Unit]
 Description=Week 6 Pub/Sub Subscriber
 After=network.target
@@ -528,23 +527,37 @@ systemctl daemon-reload
 systemctl enable subscriber
 systemctl start subscriber
 '''
-
-        create_vm_cmd = f"""
-        gcloud compute instances create {vm_name} \\
-            --zone={self.region}-b \\
-            --machine-type=e2-medium \\
-            --boot-disk-size=20GB \\
-            --boot-disk-type=pd-standard \\
-            --image-family=debian-11 \\
-            --image-project=debian-cloud \\
-            --scopes=https://www.googleapis.com/auth/cloud-platform \\
-            --metadata=startup-script='{startup_script}'
-        """
         
-        self.run_command(create_vm_cmd, f"Creating VM: {vm_name}")
+        # Write startup script to temporary file
+        startup_script_path = f"/tmp/startup-script-{self.timestamp}.sh"
+        with open(startup_script_path, 'w') as f:
+            f.write(startup_script_content)
         
-        logger.info(f"✅ VM created: {vm_name}")
-        logger.info(f"   The subscriber service will start automatically")
+        try:
+            # Create VM with startup script file
+            create_vm_cmd = f"""
+            gcloud compute instances create {vm_name} \\
+                --zone={self.region}-b \\
+                --machine-type=e2-medium \\
+                --boot-disk-size=20GB \\
+                --boot-disk-type=pd-standard \\
+                --image-family=debian-11 \\
+                --image-project=debian-cloud \\
+                --scopes=https://www.googleapis.com/auth/cloud-platform \\
+                --metadata-from-file=startup-script={startup_script_path}
+            """
+            
+            self.run_command(create_vm_cmd, f"Creating VM: {vm_name}")
+            
+            logger.info(f"✅ VM created: {vm_name}")
+            logger.info(f"   The subscriber service will start automatically")
+            
+        finally:
+            # Clean up temporary startup script file
+            import os
+            if os.path.exists(startup_script_path):
+                os.remove(startup_script_path)
+                logger.debug(f"Cleaned up temporary startup script: {startup_script_path}")
         
         return vm_name
     
