@@ -1,0 +1,27 @@
+# Week 6: Real-time Line Counting with Cloud Functions and Pub/Sub
+# Author: Abhyudaya B Tharakan 22f3001492
+# Course: Introduction to Big Data
+# Date: July 2025
+
+# Core Google Cloud dependencies
+google-cloud-pubsub>=2.18.0
+google-cloud-storage>=2.10.0
+google-cloud-functions>=1.16.0
+functions-framework>=3.4.0
+
+# Authentication and core utilities
+google-auth>=2.22.0
+google-cloud-core>=2.3.0
+
+# For concurrent processing and utilities
+futures>=3.1.1
+
+# Development and testing
+pytest>=6.0.0
+pytest-mock>=3.11.0
+
+# For CLI argument parsing
+argparse
+
+# For JSON processing and logging (included in standard library)
+# Listed here for documentation purposes

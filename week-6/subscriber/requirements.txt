@@ -1,0 +1,17 @@
+# Pub/Sub Subscriber Requirements
+# Week 6: Real-time File Processing with Pub/Sub
+# Author: Abhyudaya B Tharakan 22f3001492
+
+# Core Google Cloud dependencies
+google-cloud-pubsub>=2.18.0
+google-cloud-storage>=2.10.0
+
+# Authentication and core utilities
+google-auth>=2.22.0
+google-cloud-core>=2.3.0
+
+# For concurrent processing
+futures>=3.1.1
+
+# Development and testing
+pytest>=6.0.0

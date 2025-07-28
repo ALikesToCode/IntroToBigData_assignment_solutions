@@ -1,0 +1,32 @@
+# Large Sample Data File for Real-time Line Counting
+# This file contains multiple lines to test the processing capability
+
+Line 1: Introduction to Big Data Course - Week 6 Assignment
+Line 2: Real-time file processing using Google Cloud Functions
+Line 3: Pub/Sub messaging for distributed system communication
+Line 4: Google Cloud Storage as the trigger source
+Line 5: Python-based subscriber for line counting functionality
+
+Line 6: Architecture involves multiple Google Cloud services
+Line 7: Event-driven processing ensures real-time response
+Line 8: Scalable design handles multiple concurrent files
+Line 9: Logging and monitoring provide operational visibility
+Line 10: Error handling ensures robust system operation
+
+Line 11: Sample data demonstrates practical implementation
+Line 12: Testing validates functionality before deployment
+Line 13: Documentation provides comprehensive guidance
+Line 14: Best practices ensure production readiness
+Line 15: Security considerations protect data integrity
+
+Line 16: Performance optimization handles large files efficiently
+Line 17: Cost optimization minimizes cloud resource usage
+Line 18: Monitoring alerts notify of system issues
+Line 19: Backup strategies protect against data loss
+Line 20: Disaster recovery ensures business continuity
+
+Line 21: Integration testing validates end-to-end workflow
+Line 22: Unit testing verifies individual component functionality
+Line 23: Load testing ensures system scalability
+Line 24: Security testing protects against vulnerabilities
+Line 25: Final validation confirms deployment readiness

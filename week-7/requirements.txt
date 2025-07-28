@@ -1,0 +1,26 @@
+# Week 7: Real-time Streaming with Kafka and Spark
+# Author: Abhyudaya B Tharakan 22f3001492
+# Course: Introduction to Big Data
+# Date: July 2025
+
+# Kafka client for Python
+kafka-python>=2.0.2
+
+# PySpark for Spark Streaming
+pyspark>=3.4.0
+
+# Data processing and utilities
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Development and testing
+pytest>=6.0.0
+
+# For data generation
+Faker>=18.0.0
+
+# Command line argument parsing
+argparse
+
+# For JSON processing and logging (included in standard library)
+# Listed here for documentation purposes

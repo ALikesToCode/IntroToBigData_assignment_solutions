@@ -1,0 +1,15 @@
+# Google Cloud Function Requirements
+# Week 6: Real-time File Processing with Pub/Sub
+# Author: Abhyudaya B Tharakan 22f3001492
+
+# Core Google Cloud dependencies
+google-cloud-pubsub>=2.18.0
+google-cloud-storage>=2.10.0
+functions-framework>=3.4.0
+
+# Additional utilities
+google-auth>=2.22.0
+google-cloud-core>=2.3.0
+
+# For JSON processing and logging (usually included in Python standard library)
+# Including here for explicit dependency management

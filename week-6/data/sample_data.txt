@@ -1,0 +1,10 @@
+This is line 1 of the sample data file
+Line 2 contains some text for testing
+Here is line 3 with different content
+Line 4 demonstrates the line counting functionality
+This is line 5 of our test file
+Line 6 shows how the system processes each line
+Line 7 contains more sample data
+Here we have line 8 for comprehensive testing
+Line 9 helps verify the accuracy of our counting
+Line 10 is the final line in this sample file
