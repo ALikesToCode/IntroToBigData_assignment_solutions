@@ -1,0 +1,7 @@
+Line 1: Testing real pipeline
+Line 2: Cloud Function trigger
+Line 3: Pub/Sub messaging  
+Line 4: Real-time processing
+Line 5: Line counting demo
+Line 6: End-to-end workflow
+Line 7: Final verification

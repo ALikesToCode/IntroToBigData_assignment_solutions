@@ -69,7 +69,28 @@ def process_file_upload(cloud_event):
         
         logger.info(f"Publishing to topic: {topic_path}")
         
-        # Create message payload
+        # COUNT LINES IN THE FILE
+        from google.cloud import storage
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(file_name)
+        
+        try:
+            # Download and count lines
+            content = blob.download_as_text()
+            lines = content.splitlines()
+            line_count = len(lines)
+            file_size = blob.size
+            
+            logger.info(f"📊 ACTUAL LINE COUNT: {line_count} lines")
+            logger.info(f"📏 FILE SIZE: {file_size} bytes")
+            
+        except Exception as count_error:
+            logger.error(f"Failed to count lines: {count_error}")
+            line_count = -1
+            file_size = -1
+
+        # Create message payload with ACTUAL LINE COUNT
         message_data = {
             'bucket_name': bucket_name,
             'file_name': file_name,
@@ -77,7 +98,10 @@ def process_file_upload(cloud_event):
             'time_created': time_created,
             'file_path': f"gs://{bucket_name}/{file_name}",
             'processing_request': 'line_count',
-            'function_triggered_at': time_created
+            'function_triggered_at': time_created,
+            'LINE_COUNT': line_count,
+            'FILE_SIZE': file_size,
+            'PROCESSING_COMPLETE': True
         }
         
         # Convert message to JSON bytes
