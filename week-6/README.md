@@ -650,6 +650,74 @@ def validate_environment():
         raise ValueError(f"Missing environment variables: {missing_vars}")
 ```
 
+**Error 4: GCS Service Account IAM Permissions for Eventarc**
+```
+ERROR: Creating trigger failed for projects/PROJECT_ID/locations/us-central1/triggers/file-upload-processor: 
+The Cloud Storage service account for your bucket is unable to publish to Cloud Pub/Sub topics in the specified project. 
+To use GCS CloudEvent triggers, the GCS service account requires the Pub/Sub Publisher (roles/pubsub.publisher) IAM role
+```
+
+**Root Cause**: Google Cloud Functions 2nd generation with GCS triggers use Eventarc, which requires the Google Cloud Storage service account to have `roles/pubsub.publisher` permission to publish events to Pub/Sub topics.
+
+**Technical Background**:
+- GCS triggers in Cloud Functions 2nd gen use Eventarc architecture
+- When files are uploaded to GCS, the GCS service account publishes events to Pub/Sub
+- These events then trigger the Cloud Function via Eventarc
+- By default, the GCS service account lacks Pub/Sub publishing permissions
+
+**Solution Implemented**:
+```python
+def configure_gcs_iam_permissions(self):
+    """Configure IAM permissions for GCS service account to publish to Pub/Sub."""
+    logger.info("🔐 Configuring IAM permissions for GCS service account...")
+    
+    # Get the GCS service account for the project
+    result = self.run_command(
+        f"gsutil kms serviceaccount -p {self.project_id}",
+        "Getting GCS service account"
+    )
+    
+    gcs_service_account = result.stdout.strip()
+    logger.info(f"📧 GCS Service Account: {gcs_service_account}")
+    
+    # Grant pubsub.publisher role to GCS service account
+    self.run_command(
+        f"gcloud projects add-iam-policy-binding {self.project_id} "
+        f"--member='serviceAccount:{gcs_service_account}' "
+        f"--role='roles/pubsub.publisher'",
+        "Granting Pub/Sub Publisher role to GCS service account"
+    )
+    
+    # Also grant eventarc.eventReceiver role for completeness
+    self.run_command(
+        f"gcloud projects add-iam-policy-binding {self.project_id} "
+        f"--member='serviceAccount:{gcs_service_account}' "
+        f"--role='roles/eventarc.eventReceiver'",
+        "Granting Eventarc Event Receiver role to GCS service account"
+    )
+    
+    # Wait for IAM changes to propagate
+    time.sleep(30)
+    logger.info("✅ IAM permissions configured")
+```
+
+**Manual Fix (if needed)**:
+```bash
+# Get GCS service account
+GCS_SA=$(gsutil kms serviceaccount -p YOUR_PROJECT_ID)
+
+# Grant required permissions
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+    --member="serviceAccount:${GCS_SA}" \
+    --role="roles/pubsub.publisher"
+
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+    --member="serviceAccount:${GCS_SA}" \
+    --role="roles/eventarc.eventReceiver"
+```
+
+**Prevention**: The deployment script now automatically configures these permissions during the pipeline setup phase, ensuring Cloud Functions GCS triggers work correctly from the start.
+
 ### 6.2 Pub/Sub Integration Errors
 
 **Error 4: Topic and Subscription Creation Race Condition**

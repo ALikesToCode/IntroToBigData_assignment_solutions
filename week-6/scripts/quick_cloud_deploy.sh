@@ -85,6 +85,7 @@ print_success "Prerequisites validated"
 
 # Deploy pipeline
 print_status "☁️ Deploying Week 6 real-time line counting pipeline..."
+print_status "   This includes automatic IAM configuration for GCS triggers..."
 python3 scripts/deploy_to_gcloud.py \
     --project-id $PROJECT_ID \
     --region $REGION \

@@ -140,7 +140,8 @@ class Week6CloudDeployment:
             'storage.googleapis.com',
             'cloudbuild.googleapis.com',
             'logging.googleapis.com',
-            'eventarc.googleapis.com'
+            'eventarc.googleapis.com',
+            'iam.googleapis.com'
         ]
         
         logger.info("🔌 Enabling required APIs...")
@@ -181,6 +182,86 @@ class Week6CloudDeployment:
             )
         
         logger.info("✅ GCS bucket ready")
+    
+    def configure_gcs_iam_permissions(self):
+        """
+        Configure IAM permissions for GCS service account to publish to Pub/Sub.
+        
+        This is required for Cloud Functions 2nd gen GCS triggers to work with Eventarc.
+        """
+        logger.info("🔐 Configuring IAM permissions for GCS service account...")
+        
+        try:
+            # Get the GCS service account for the project
+            result = self.run_command(
+                f"gsutil kms serviceaccount -p {self.project_id}",
+                "Getting GCS service account"
+            )
+            
+            gcs_service_account = result.stdout.strip()
+            
+            if not gcs_service_account:
+                raise RuntimeError("Unable to retrieve GCS service account")
+            
+            logger.info(f"📧 GCS Service Account: {gcs_service_account}")
+            
+            # Check if pubsub.publisher role is already granted
+            check_result = self.run_command(
+                f"gcloud projects get-iam-policy {self.project_id} "
+                f"--format='value(bindings[].members)' "
+                f"--filter='bindings.role:roles/pubsub.publisher'",
+                "Checking existing Pub/Sub Publisher permissions",
+                check=False
+            )
+            
+            if f"serviceAccount:{gcs_service_account}" not in check_result.stdout:
+                # Grant pubsub.publisher role to GCS service account
+                self.run_command(
+                    f"gcloud projects add-iam-policy-binding {self.project_id} "
+                    f"--member='serviceAccount:{gcs_service_account}' "
+                    f"--role='roles/pubsub.publisher'",
+                    "Granting Pub/Sub Publisher role to GCS service account"
+                )
+                logger.info("✅ Granted Pub/Sub Publisher role")
+            else:
+                logger.info("ℹ️ Pub/Sub Publisher role already granted")
+            
+            # Check if eventarc.eventReceiver role is already granted
+            check_result = self.run_command(
+                f"gcloud projects get-iam-policy {self.project_id} "
+                f"--format='value(bindings[].members)' "
+                f"--filter='bindings.role:roles/eventarc.eventReceiver'",
+                "Checking existing Eventarc Event Receiver permissions",
+                check=False
+            )
+            
+            if f"serviceAccount:{gcs_service_account}" not in check_result.stdout:
+                # Grant eventarc.eventReceiver role for completeness
+                self.run_command(
+                    f"gcloud projects add-iam-policy-binding {self.project_id} "
+                    f"--member='serviceAccount:{gcs_service_account}' "
+                    f"--role='roles/eventarc.eventReceiver'",
+                    "Granting Eventarc Event Receiver role to GCS service account"
+                )
+                logger.info("✅ Granted Eventarc Event Receiver role")
+            else:
+                logger.info("ℹ️ Eventarc Event Receiver role already granted")
+            
+            # Wait for IAM changes to propagate
+            logger.info("⏳ Waiting for IAM changes to propagate...")
+            time.sleep(30)
+            
+            logger.info("✅ IAM permissions configured for GCS service account")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to configure IAM permissions: {e}")
+            logger.error("   This may cause Cloud Functions GCS triggers to fail")
+            logger.error("   Manual fix: Run the following commands:")
+            logger.error(f"   gsutil kms serviceaccount -p {self.project_id}")
+            logger.error("   gcloud projects add-iam-policy-binding PROJECT_ID \\")
+            logger.error("     --member='serviceAccount:GCS_SERVICE_ACCOUNT' \\")
+            logger.error("     --role='roles/pubsub.publisher'")
+            raise
     
     def create_pubsub_resources(self):
         """
@@ -479,6 +560,9 @@ EOF
             
             # Create GCS bucket
             self.create_gcs_bucket()
+            
+            # Configure IAM permissions for GCS service account
+            self.configure_gcs_iam_permissions()
             
             # Create Pub/Sub resources
             self.create_pubsub_resources()
