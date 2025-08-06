@@ -25,7 +25,7 @@ def run_command(cmd, description):
 
 def main():
     # Use your current project from the debug output
-    project_id = "spheric-gecko-467914-f8"
+    project_id = "steady-triumph-447006-f8"
     cluster_name = "week7-streaming-cluster"
     region = "us-central1"
     bucket_name = f"{project_id}-week7-streaming-data"
