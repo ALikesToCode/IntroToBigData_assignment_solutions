@@ -378,7 +378,7 @@ echo "Kafka initialization completed successfully"
         
         # Files to upload
         files_to_upload = [
-            (self.project_dir / "producer" / "kafka_producer.py", "apps/kafka_producer.py"),
+            (self.project_dir / "spark_kafka_producer.py", "apps/spark_kafka_producer.py"),
             (self.project_dir / "consumer" / "spark_streaming_consumer.py", "apps/spark_streaming_consumer.py"),
             (self.project_dir / "requirements.txt", "apps/requirements.txt")
         ]
@@ -498,13 +498,14 @@ echo "Kafka initialization completed successfully"
         
         producer_cmd = f"""
         gcloud dataproc jobs submit pyspark \\
-            gs://{self.bucket_name}/apps/kafka_producer.py \\
+            gs://{self.bucket_name}/apps/spark_kafka_producer.py \\
             --cluster={self.cluster_name} \\
             --region={self.region} \\
             --async \\
             --properties="spark.executor.memory=2g,spark.driver.memory=1g,spark.executor.instances=1,spark.executor.cores=1" \\
             -- \\
             --data-file=gs://{self.bucket_name}/input-data/customer_transactions_1200.csv \\
+            --kafka-servers=localhost:9092 \\
             --topic=customer-transactions \\
             --batch-size=10 \\
             --sleep-seconds=10 \\
