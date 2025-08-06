@@ -454,28 +454,11 @@ echo "Kafka initialization completed successfully"
     
     def submit_streaming_jobs(self):
         """
-        Submit producer and consumer jobs to the Dataproc cluster.
+        Submit producer and consumer jobs to the Dataproc cluster concurrently.
         """
         logger.info("🚀 Submitting streaming jobs to Dataproc...")
         
-        # Submit producer job (PySpark job)
-        producer_job_id = f"producer-job-{self.timestamp}"
-        
-        producer_cmd = f"""
-        gcloud dataproc jobs submit pyspark \\
-            gs://{self.bucket_name}/apps/kafka_producer.py \\
-            --cluster={self.cluster_name} \\
-            --region={self.region} \\
-            --properties="spark.executor.memory=2g,spark.driver.memory=1g,spark.executor.instances=2,spark.executor.cores=1" \\
-            -- \\
-            --data-file=gs://{self.bucket_name}/input-data/customer_transactions_1200.csv \\
-            --topic=customer-transactions \\
-            --batch-size=10 \\
-            --sleep-seconds=10 \\
-            --max-records=1000
-        """
-        
-        # Submit consumer job (Spark Streaming)
+        # Submit consumer job (Spark Streaming) - NON-BLOCKING
         consumer_job_id = f"consumer-job-{self.timestamp}"
         
         consumer_cmd = f"""
@@ -483,7 +466,8 @@ echo "Kafka initialization completed successfully"
             gs://{self.bucket_name}/apps/spark_streaming_consumer.py \\
             --cluster={self.cluster_name} \\
             --region={self.region} \\
-            --properties="spark.executor.memory=2g,spark.driver.memory=1g,spark.executor.instances=2,spark.executor.cores=1,spark.sql.adaptive.enabled=true,spark.sql.adaptive.coalescePartitions.enabled=true" \\
+            --async \\
+            --properties="spark.executor.memory=2g,spark.driver.memory=1g,spark.executor.instances=1,spark.executor.cores=1,spark.sql.adaptive.enabled=true,spark.sql.adaptive.coalescePartitions.enabled=true" \\
             -- \\
             --kafka-servers=localhost:9092 \\
             --topic=customer-transactions \\
@@ -491,19 +475,62 @@ echo "Kafka initialization completed successfully"
             --slide-duration=5
         """
         
-        # Submit jobs
-        logger.info("📊 Submitting consumer job (Spark Streaming)...")
-        self.run_command(consumer_cmd, f"Submitting consumer job {consumer_job_id}")
+        logger.info("📊 Submitting consumer job (Spark Streaming) in ASYNC mode...")
+        result = subprocess.run(consumer_cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"❌ Consumer job submission failed: {result.stderr}")
+            raise RuntimeError("Consumer job submission failed")
         
-        # Wait a bit, then submit producer
-        time.sleep(30)
+        # Extract job ID from output
+        if "Job [" in result.stdout:
+            actual_consumer_job_id = result.stdout.split("Job [")[1].split("]")[0]
+            logger.info(f"✅ Consumer job submitted: {actual_consumer_job_id}")
+        else:
+            actual_consumer_job_id = consumer_job_id
+            logger.info("✅ Consumer job submitted asynchronously")
         
-        logger.info("📤 Submitting producer job...")
-        self.run_command(producer_cmd, f"Submitting producer job {producer_job_id}")
+        # Wait for consumer to initialize
+        logger.info("⏰ Waiting 45 seconds for consumer to initialize...")
+        time.sleep(45)
         
-        logger.info("✅ Jobs submitted successfully")
+        # Submit producer job (PySpark job) - NON-BLOCKING  
+        producer_job_id = f"producer-job-{self.timestamp}"
         
-        return producer_job_id, consumer_job_id
+        producer_cmd = f"""
+        gcloud dataproc jobs submit pyspark \\
+            gs://{self.bucket_name}/apps/kafka_producer.py \\
+            --cluster={self.cluster_name} \\
+            --region={self.region} \\
+            --async \\
+            --properties="spark.executor.memory=2g,spark.driver.memory=1g,spark.executor.instances=1,spark.executor.cores=1" \\
+            -- \\
+            --data-file=gs://{self.bucket_name}/input-data/customer_transactions_1200.csv \\
+            --topic=customer-transactions \\
+            --batch-size=10 \\
+            --sleep-seconds=10 \\
+            --max-records=100
+        """
+        
+        logger.info("📤 Submitting producer job in ASYNC mode...")
+        result = subprocess.run(producer_cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"❌ Producer job submission failed: {result.stderr}")
+            raise RuntimeError("Producer job submission failed")
+        
+        # Extract job ID from output
+        if "Job [" in result.stdout:
+            actual_producer_job_id = result.stdout.split("Job [")[1].split("]")[0]
+            logger.info(f"✅ Producer job submitted: {actual_producer_job_id}")
+        else:
+            actual_producer_job_id = producer_job_id
+            logger.info("✅ Producer job submitted asynchronously")
+        
+        logger.info("🎯 Both jobs submitted and running concurrently!")
+        logger.info("📊 Consumer is listening for streaming data")
+        logger.info("📤 Producer will send batches every 10 seconds")
+        logger.info(f"📋 Monitor jobs with: gcloud dataproc jobs list --cluster={self.cluster_name} --region={self.region}")
+        
+        return actual_producer_job_id, actual_consumer_job_id
     
     def monitor_jobs(self, producer_job_id, consumer_job_id):
         """
