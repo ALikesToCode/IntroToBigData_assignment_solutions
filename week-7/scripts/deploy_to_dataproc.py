@@ -183,21 +183,22 @@ class DataprocStreamingDeployment:
         """
         logger.info(f"🏗️ Creating Dataproc cluster: {self.cluster_name}")
         
-        # Cluster configuration for streaming workloads (small size for testing)
+        # Cluster configuration optimized for Kafka + Spark Streaming workloads
+        # Updated to use e2-standard-2 instances with better memory allocation
         cluster_config = {
             'master': {
-                'machine_type': 'e2-medium',  # 1 vCPU, 4GB RAM
+                'machine_type': 'e2-standard-2',  # 2 vCPUs, 8GB RAM (adequate for coordination)
                 'boot_disk_size': '50GB',
                 'boot_disk_type': 'pd-standard'
             },
             'worker': {
                 'num_instances': 2,
-                'machine_type': 'e2-medium',  # 1 vCPU, 4GB RAM
+                'machine_type': 'e2-standard-2',  # 2 vCPUs, 8GB RAM (sufficient for streaming)
                 'boot_disk_size': '50GB',
                 'boot_disk_type': 'pd-standard'
             },
             'preemptible_workers': {
-                'num_instances': 0  # No preemptible for streaming
+                'num_instances': 0  # No preemptible for streaming reliability
             }
         }
         
@@ -216,7 +217,7 @@ class DataprocStreamingDeployment:
             --image-version=2.1-debian11 \\
             --bucket={self.bucket_name} \\
             --optional-components=ZOOKEEPER \\
-            --properties="spark:spark.jars.packages=org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0"
+            --properties="spark:spark.jars.packages=org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0,spark:spark.driver.memory=1g,spark:spark.executor.memory=3g,spark:spark.executor.instances=2,spark:spark.executor.cores=1,spark:spark.sql.adaptive.enabled=true,spark:spark.sql.adaptive.coalescePartitions.enabled=true,spark:spark.sql.streaming.checkpointLocation=gs://{self.bucket_name}/checkpoints"
         """
         
         self.run_command(create_cmd, f"Creating cluster {self.cluster_name}")
@@ -372,8 +373,8 @@ echo "Kafka initialization completed successfully"
         """
         logger.info("📤 Uploading application files to GCS...")
         
-        # Install Kafka on cluster first (skip for now due to memory issues)
-        # self.setup_kafka_on_cluster()
+        # Install Kafka on cluster first
+        self.setup_kafka_on_cluster()
         
         # Files to upload
         files_to_upload = [
@@ -393,40 +394,63 @@ echo "Kafka initialization completed successfully"
     
     def setup_kafka_on_cluster(self):
         """
-        Setup Kafka on the Dataproc cluster using SSH commands.
+        Setup Kafka on the Dataproc cluster using improved SSH commands.
         """
         logger.info("📦 Setting up Kafka on cluster...")
         
         try:
-            # Use SSH to install Kafka on the master node
-            ssh_commands = [
-                "sudo apt-get update -y || true",
-                "sudo apt-get install -y openjdk-11-jdk wget",
-                "export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64",
-                "cd /opt && sudo wget -q https://dlcdn.apache.org/kafka/3.9.1/kafka_2.13-3.9.1.tgz || echo 'Download may have issues'",
-                "cd /opt && sudo tar -xzf kafka_2.13-3.9.1.tgz || echo 'Extract may have issues'", 
-                "cd /opt && sudo mv kafka_2.13-3.9.1 kafka || echo 'Move may have issues'",
-                "sudo chown -R $USER:$USER /opt/kafka || echo 'Chown may have issues'",
-                "mkdir -p /tmp/kafka-logs",
-                "cd /opt/kafka && nohup bin/kafka-server-start.sh config/server.properties > /tmp/kafka.log 2>&1 &",
-                "sleep 5",
-                "cd /opt/kafka && bin/kafka-topics.sh --create --topic customer-transactions --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1 || echo 'Topic creation may have issues'"
+            # Multi-step SSH setup for better reliability
+            setup_steps = [
+                # Step 1: Basic setup
+                "sudo apt-get update -y && sudo apt-get install -y openjdk-11-jdk wget",
+                
+                # Step 2: Download Kafka
+                "cd /opt && sudo wget -q https://dlcdn.apache.org/kafka/3.9.1/kafka_2.13-3.9.1.tgz",
+                
+                # Step 3: Extract and setup
+                "cd /opt && sudo tar -xzf kafka_2.13-3.9.1.tgz && sudo mv kafka_2.13-3.9.1 kafka",
+                
+                # Step 4: Set permissions and create directories
+                "sudo chown -R $USER:$USER /opt/kafka && mkdir -p /tmp/kafka-logs",
+                
+                # Step 5: Configure Kafka with optimized memory settings for e2-standard-2
+                f"""cd /opt/kafka && echo 'export KAFKA_HEAP_OPTS="-Xmx1g -Xms1g"' > kafka_env.sh && source kafka_env.sh""",
+                
+                # Step 6: Start Kafka
+                "cd /opt/kafka && export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 && nohup bin/kafka-server-start.sh config/server.properties > /tmp/kafka.log 2>&1 &",
+                
+                # Step 7: Wait and create topic
+                "sleep 15 && cd /opt/kafka && bin/kafka-topics.sh --create --topic customer-transactions --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1"
             ]
             
-            # Execute via SSH
-            full_command = "; ".join(ssh_commands)
-            ssh_cmd = f"""
+            # Execute each step separately for better error tracking
+            for i, command in enumerate(setup_steps, 1):
+                ssh_cmd = f"""
+                gcloud compute ssh {self.cluster_name}-m \\
+                    --zone={self.zone} \\
+                    --command="{command}"
+                """
+                
+                logger.info(f"📦 Kafka setup step {i}/{len(setup_steps)}")
+                self.run_command(ssh_cmd, f"Kafka setup step {i}", check=False)
+                
+            # Verify Kafka installation
+            verify_cmd = f"""
             gcloud compute ssh {self.cluster_name}-m \\
-                --zone={self.zone.replace('us-central1-', 'us-central1-')} \\
-                --command="{full_command}"
+                --zone={self.zone} \\
+                --command="cd /opt/kafka && bin/kafka-topics.sh --list --bootstrap-server localhost:9092"
             """
             
-            self.run_command(ssh_cmd, "Setting up Kafka via SSH", check=False)
-            logger.info("✅ Kafka setup attempted via SSH")
+            result = self.run_command(verify_cmd, "Verifying Kafka installation", check=False)
             
+            if "customer-transactions" in result.stdout:
+                logger.info("✅ Kafka setup completed successfully")
+            else:
+                logger.warning("⚠️ Kafka topic may not be created properly")
+                
         except Exception as e:
             logger.warning(f"⚠️ Kafka setup may have issues: {e}")
-            logger.info("   Continuing with streaming jobs...")
+            logger.info("   Continuing with streaming jobs - Kafka can be setup manually if needed")
     
     def submit_streaming_jobs(self):
         """
@@ -442,7 +466,7 @@ echo "Kafka initialization completed successfully"
             gs://{self.bucket_name}/apps/kafka_producer.py \\
             --cluster={self.cluster_name} \\
             --region={self.region} \\
-            --properties="spark.executor.memory=256m,spark.driver.memory=256m" \\
+            --properties="spark.executor.memory=2g,spark.driver.memory=1g,spark.executor.instances=2,spark.executor.cores=1" \\
             -- \\
             --data-file=gs://{self.bucket_name}/input-data/customer_transactions_1200.csv \\
             --topic=customer-transactions \\
@@ -459,7 +483,7 @@ echo "Kafka initialization completed successfully"
             gs://{self.bucket_name}/apps/spark_streaming_consumer.py \\
             --cluster={self.cluster_name} \\
             --region={self.region} \\
-            --properties="spark.executor.memory=256m,spark.driver.memory=256m,spark.sql.adaptive.enabled=true" \\
+            --properties="spark.executor.memory=2g,spark.driver.memory=1g,spark.executor.instances=2,spark.executor.cores=1,spark.sql.adaptive.enabled=true,spark.sql.adaptive.coalescePartitions.enabled=true" \\
             -- \\
             --kafka-servers=localhost:9092 \\
             --topic=customer-transactions \\
