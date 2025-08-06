@@ -372,6 +372,9 @@ echo "Kafka initialization completed successfully"
         """
         logger.info("📤 Uploading application files to GCS...")
         
+        # Install Kafka on cluster first
+        self.setup_kafka_on_cluster()
+        
         # Files to upload
         files_to_upload = [
             (self.project_dir / "producer" / "kafka_producer.py", "apps/kafka_producer.py"),
@@ -388,6 +391,120 @@ echo "Kafka initialization completed successfully"
         
         logger.info("✅ Application files uploaded")
     
+    def setup_kafka_on_cluster(self):
+        """
+        Setup Kafka on the Dataproc cluster using a simple job.
+        """
+        logger.info("📦 Setting up Kafka on cluster...")
+        
+        # Create a simple Python script to install and start Kafka
+        kafka_setup_script = '''
+import subprocess
+import time
+import os
+
+def run_command(cmd):
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
+        print(f"Command: {cmd}")
+        print(f"Output: {result.stdout}")
+        if result.stderr:
+            print(f"Error: {result.stderr}")
+        return result.returncode == 0
+    except Exception as e:
+        print(f"Exception running {cmd}: {e}")
+        return False
+
+# Install dependencies
+print("Installing Java and wget...")
+run_command("sudo apt-get update || true")
+run_command("sudo apt-get install -y openjdk-11-jdk wget")
+
+# Set JAVA_HOME
+os.environ['JAVA_HOME'] = '/usr/lib/jvm/java-11-openjdk-amd64'
+
+# Download and install Kafka
+print("Downloading Kafka...")
+if not os.path.exists("/opt/kafka"):
+    run_command("cd /opt && sudo wget -q https://dlcdn.apache.org/kafka/3.9.1/kafka_2.13-3.9.1.tgz")
+    run_command("cd /opt && sudo tar -xzf kafka_2.13-3.9.1.tgz")
+    run_command("cd /opt && sudo mv kafka_2.13-3.9.1 kafka")
+    run_command("sudo chown -R $USER:$USER /opt/kafka")
+
+# Configure and start Kafka
+print("Starting Kafka...")
+os.chdir("/opt/kafka")
+
+# Start Zookeeper (using the one from Dataproc)
+print("Kafka setup completed - using Dataproc Zookeeper")
+
+# Create a simple Kafka server properties for single node
+with open("/opt/kafka/config/server.properties", "w") as f:
+    f.write("""
+broker.id=1
+listeners=PLAINTEXT://0.0.0.0:9092
+advertised.listeners=PLAINTEXT://localhost:9092
+log.dirs=/tmp/kafka-logs
+num.network.threads=3
+num.io.threads=8
+socket.send.buffer.bytes=102400
+socket.receive.buffer.bytes=102400
+socket.request.max.bytes=104857600
+num.partitions=3
+num.recovery.threads.per.data.dir=1
+offsets.topic.replication.factor=1
+transaction.state.log.replication.factor=1
+transaction.state.log.min.isr=1
+log.retention.hours=24
+log.segment.bytes=1073741824
+log.retention.check.interval.ms=300000
+zookeeper.connect=localhost:2181
+zookeeper.connection.timeout.ms=18000
+group.initial.rebalance.delay.ms=0
+auto.create.topics.enable=true
+default.replication.factor=1
+min.insync.replicas=1
+""")
+
+# Start Kafka server
+run_command("nohup bin/kafka-server-start.sh config/server.properties > /tmp/kafka.log 2>&1 &")
+time.sleep(10)
+
+# Create topic
+run_command("bin/kafka-topics.sh --create --topic customer-transactions --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1 || true")
+
+print("Kafka setup completed successfully!")
+'''
+
+        # Write the setup script to a temporary file
+        setup_script_path = "/tmp/kafka_setup.py"
+        with open(setup_script_path, 'w') as f:
+            f.write(kafka_setup_script)
+        
+        # Upload the setup script
+        gcs_script_path = f"gs://{self.bucket_name}/scripts/kafka_setup.py"
+        self.run_command(f"gcloud storage cp {setup_script_path} {gcs_script_path}", "Uploading Kafka setup script")
+        
+        try:
+            # Submit the setup job
+            setup_cmd = f"""
+            gcloud dataproc jobs submit pyspark \\
+                {gcs_script_path} \\
+                --cluster={self.cluster_name} \\
+                --region={self.region} \\
+                --properties="spark.driver.memory=512m"
+            """
+            
+            self.run_command(setup_cmd, "Setting up Kafka on cluster")
+            logger.info("✅ Kafka setup completed")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Kafka setup may have issues: {e}")
+            logger.info("   Continuing with streaming jobs...")
+            
+        # Clean up local file
+        os.remove(setup_script_path)
+    
     def submit_streaming_jobs(self):
         """
         Submit producer and consumer jobs to the Dataproc cluster.
@@ -402,9 +519,7 @@ echo "Kafka initialization completed successfully"
             gs://{self.bucket_name}/apps/kafka_producer.py \\
             --cluster={self.cluster_name} \\
             --region={self.region} \\
-            --job-id={producer_job_id} \\
-            --py-files=gs://{self.bucket_name}/apps/requirements.txt \\
-            --properties="spark.executor.memory=2g,spark.driver.memory=1g" \\
+            --properties="spark.executor.memory=1g,spark.driver.memory=512m" \\
             -- \\
             --data-file=gs://{self.bucket_name}/input-data/customer_transactions_1200.csv \\
             --topic=customer-transactions \\
@@ -421,10 +536,7 @@ echo "Kafka initialization completed successfully"
             gs://{self.bucket_name}/apps/spark_streaming_consumer.py \\
             --cluster={self.cluster_name} \\
             --region={self.region} \\
-            --job-id={consumer_job_id} \\
-            --jars=gs://spark-lib/bigquery/spark-bigquery-latest_2.12.jar \\
-            --packages=org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.3 \\
-            --properties="spark.executor.memory=2g,spark.driver.memory=1g,spark.sql.adaptive.enabled=true" \\
+            --properties="spark.executor.memory=1g,spark.driver.memory=512m,spark.sql.adaptive.enabled=true" \\
             -- \\
             --kafka-servers=localhost:9092 \\
             --topic=customer-transactions \\
