@@ -182,7 +182,7 @@ class CustomerTransactionStreamProcessor:
                     count("*").alias("record_count"),
                     sum("final_amount").alias("total_transaction_value"),
                     avg("final_amount").alias("avg_transaction_value"),
-                    countDistinct("customer_id").alias("unique_customers"),
+                    approx_count_distinct("customer_id").alias("unique_customers"),
                     max("batch_number").alias("max_batch_number"),
                     min("batch_number").alias("min_batch_number")
                 ) \
