@@ -2,21 +2,21 @@
 # Kafka initialization script for Dataproc cluster
 set -e
 
-# Update system (ignore repository errors)
-apt-get update || true
+# Update system
+apt-get update
 
-# Install Java 11 (better compatibility)
-apt-get install -y openjdk-11-jdk
+# Install Java 8 (required for Kafka)
+apt-get install -y openjdk-8-jdk
 
 # Set JAVA_HOME
-export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-echo "export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" >> /etc/environment
+export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+echo "export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64" >> /etc/environment
 
-# Download and install Kafka 3.9.1 (latest stable)
+# Download and install Kafka
 cd /opt
-wget -q https://dlcdn.apache.org/kafka/3.9.1/kafka_2.13-3.9.1.tgz || wget -q https://archive.apache.org/dist/kafka/3.9.1/kafka_2.13-3.9.1.tgz
-tar -xzf kafka_2.13-3.9.1.tgz
-mv kafka_2.13-3.9.1 kafka
+wget https://downloads.apache.org/kafka/3.4.0/kafka_2.13-3.4.0.tgz
+tar -xzf kafka_2.13-3.4.0.tgz
+mv kafka_2.13-3.4.0 kafka
 chown -R yarn:yarn /opt/kafka
 
 # Create Kafka directories
@@ -63,7 +63,7 @@ After=network.target remote-fs.target
 Type=simple
 User=yarn
 Group=yarn
-Environment=JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+Environment=JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
 Environment=KAFKA_HEAP_OPTS="-Xmx1G -Xms1G"
 ExecStart=/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
 ExecStop=/opt/kafka/bin/kafka-server-stop.sh
