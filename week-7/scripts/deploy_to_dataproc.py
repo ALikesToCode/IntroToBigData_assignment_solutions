@@ -47,7 +47,7 @@ class DataprocStreamingDeployment:
         self.timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         
         # Resource names
-        self.cluster_name = f"week7-streaming-cluster-{self.timestamp}"
+        self.cluster_name = "week7-streaming-cluster"  # Fixed name for reuse
         self.bucket_name = f"{project_id}-week7-streaming-data"
         self.network_name = "default"
         
@@ -151,24 +151,50 @@ class DataprocStreamingDeployment:
         logger.info("✅ APIs enabled")
         time.sleep(10)  # Wait for API propagation
     
+    def cluster_exists(self):
+        """
+        Check if the Dataproc cluster already exists.
+        
+        Returns:
+            bool: True if cluster exists and is RUNNING, False otherwise
+        """
+        try:
+            result = self.run_command(
+                f"gcloud dataproc clusters describe {self.cluster_name} --region={self.region} --format='value(status.state)'", 
+                f"Checking if cluster {self.cluster_name} exists",
+                check=False
+            )
+            
+            if result.returncode == 0:
+                status = result.stdout.strip()
+                logger.info(f"✅ Cluster {self.cluster_name} exists with status: {status}")
+                return status == "RUNNING"
+            else:
+                logger.info(f"ℹ️ Cluster {self.cluster_name} does not exist")
+                return False
+                
+        except Exception as e:
+            logger.debug(f"Error checking cluster existence: {e}")
+            return False
+    
     def create_dataproc_cluster(self):
         """
         Create Dataproc cluster optimized for Kafka and Spark Streaming.
         """
         logger.info(f"🏗️ Creating Dataproc cluster: {self.cluster_name}")
         
-        # Cluster configuration for streaming workloads
+        # Cluster configuration for streaming workloads (small size for testing)
         cluster_config = {
             'master': {
-                'machine_type': 'e2-standard-4',  # 4 vCPUs, 16GB RAM
-                'boot_disk_size': '100GB',
-                'boot_disk_type': 'pd-ssd'
+                'machine_type': 'e2-medium',  # 1 vCPU, 4GB RAM
+                'boot_disk_size': '50GB',
+                'boot_disk_type': 'pd-standard'
             },
             'worker': {
                 'num_instances': 2,
-                'machine_type': 'e2-standard-4',  # 4 vCPUs, 16GB RAM
-                'boot_disk_size': '100GB',
-                'boot_disk_type': 'pd-ssd'
+                'machine_type': 'e2-medium',  # 1 vCPU, 4GB RAM
+                'boot_disk_size': '50GB',
+                'boot_disk_type': 'pd-standard'
             },
             'preemptible_workers': {
                 'num_instances': 0  # No preemptible for streaming
@@ -184,24 +210,13 @@ class DataprocStreamingDeployment:
             --zone={self.zone} \\
             --master-machine-type={cluster_config['master']['machine_type']} \\
             --master-boot-disk-size={cluster_config['master']['boot_disk_size']} \\
-            --master-boot-disk-type={cluster_config['master']['boot_disk_type']} \\
             --num-workers={cluster_config['worker']['num_instances']} \\
             --worker-machine-type={cluster_config['worker']['machine_type']} \\
             --worker-boot-disk-size={cluster_config['worker']['boot_disk_size']} \\
-            --worker-boot-disk-type={cluster_config['worker']['boot_disk_type']} \\
-            --image-version=2.0-debian10 \\
-            --enable-autoscaling \\
-            --max-workers=4 \\
-            --min-workers=2 \\
-            --max-idle=10m \\
-            --enable-ip-alias \\
-            --network={self.network_name} \\
-            --subnet=default \\
-            --enable-cloud-sql-hive-metastore \\
+            --image-version=2.1-debian11 \\
+            --bucket={self.bucket_name} \\
             --optional-components=ZOOKEEPER \\
-            --initialization-actions={init_script_uri} \\
-            --metadata="enable-cloud-sql-hive-metastore=true" \\
-            --properties="spark:spark.sql.adaptive.enabled=true,spark:spark.sql.adaptive.coalescePartitions.enabled=true,spark:spark.streaming.kafka.maxRatePerPartition=1000"
+            --properties="spark:spark.jars.packages=org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0"
         """
         
         self.run_command(create_cmd, f"Creating cluster {self.cluster_name}")
@@ -314,7 +329,7 @@ echo "Kafka initialization completed successfully"
         
         # Upload to GCS
         gcs_path = f"gs://{self.bucket_name}/scripts/kafka-init.sh"
-        self.run_command(f"gsutil cp {init_script_path} {gcs_path}", "Uploading Kafka init script")
+        self.run_command(f"gcloud storage cp {init_script_path} {gcs_path}", "Uploading Kafka init script")
         
         logger.info("✅ Kafka initialization script created and uploaded")
         
@@ -367,7 +382,7 @@ echo "Kafka initialization completed successfully"
         for local_path, gcs_path in files_to_upload:
             if local_path.exists():
                 full_gcs_path = f"gs://{self.bucket_name}/{gcs_path}"
-                self.run_command(f"gsutil cp {local_path} {full_gcs_path}", f"Uploading {local_path.name}")
+                self.run_command(f"gcloud storage cp {local_path} {full_gcs_path}", f"Uploading {local_path.name}")
             else:
                 logger.warning(f"⚠️ File not found: {local_path}")
         
@@ -503,7 +518,7 @@ echo "Kafka initialization completed successfully"
                 logger.info(f"   Log URI: {log_uri}")
                 
                 # Download and display logs
-                self.run_command(f"gsutil cat {log_uri}", f"Displaying logs for {job_id}")
+                self.run_command(f"gcloud storage cat {log_uri}", f"Displaying logs for {job_id}")
             else:
                 logger.warning(f"⚠️ Could not retrieve logs for job {job_id}")
                 
@@ -542,11 +557,16 @@ echo "Kafka initialization completed successfully"
             # Enable APIs
             self.enable_apis()
             
-            # Create Kafka initialization script
-            self.create_kafka_init_script()
-            
-            # Create Dataproc cluster
-            self.create_dataproc_cluster()
+            # Check if cluster already exists
+            if self.cluster_exists():
+                logger.info("♻️ Using existing cluster")
+            else:
+                logger.info("🆕 Creating new cluster")
+                # Create Kafka initialization script
+                self.create_kafka_init_script()
+                
+                # Create Dataproc cluster
+                self.create_dataproc_cluster()
             
             # Upload application files
             self.upload_application_files()

@@ -62,7 +62,7 @@ class GCSDataUploader:
                 bucket = self.client.get_bucket(self.bucket_name)
                 logger.info(f"✅ Bucket {self.bucket_name} already exists")
                 return bucket
-            except storage.exceptions.NotFound:
+            except Exception:
                 logger.info(f"📦 Creating bucket: {self.bucket_name}")
                 
                 bucket = self.client.bucket(self.bucket_name)
