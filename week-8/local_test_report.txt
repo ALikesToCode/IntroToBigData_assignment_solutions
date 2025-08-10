@@ -1,0 +1,35 @@
+================================================================================
+DECISION TREE CROSSVALIDATOR ANALYSIS REPORT
+================================================================================
+Generated on: 2025-08-10 16:38:44
+Spark Version: 4.0.0
+
+DATASET INFORMATION
+----------------------------------------
+Training samples: 1,000
+Test samples: 200
+Total samples: 1,200
+
+BEST MODEL PARAMETERS
+----------------------------------------
+maxDepth: 5
+minInstancesPerNode: 10
+minInfoGain: 0.0
+impurity: entropy
+maxBins: 32
+
+PERFORMANCE METRICS
+----------------------------------------
+accuracy: 0.4500
+f1: 0.4357
+weightedPrecision: 0.4377
+weightedRecall: 0.4500
+
+CROSS-VALIDATION RESULTS
+----------------------------------------
+Best CV accuracy: 0.4439
+Worst CV accuracy: 0.3581
+CV accuracy std: 0.0269
+Total parameter combinations tested: 24
+
+================================================================================

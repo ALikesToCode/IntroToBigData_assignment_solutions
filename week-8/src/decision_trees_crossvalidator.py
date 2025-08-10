@@ -158,7 +158,6 @@ class DecisionTreeCrossValidatorAnalysis:
             logger.info("🔧 Generating synthetic classification dataset...")
             
             from pyspark.ml.linalg import Vectors
-            from pyspark.sql.types import StructType, StructField, DoubleType
             import random
             
             # Set random seed for reproducibility
@@ -166,8 +165,8 @@ class DecisionTreeCrossValidatorAnalysis:
             
             # Generate synthetic data
             num_features = 20
-            train_samples = 10000
-            test_samples = 2000
+            train_samples = 5000  # Production size
+            test_samples = 1000    # Production size
             num_classes = 5
             
             def generate_sample():
@@ -193,12 +192,7 @@ class DecisionTreeCrossValidatorAnalysis:
             train_data = [generate_sample() for _ in range(train_samples)]
             test_data = [generate_sample() for _ in range(test_samples)]
             
-            # Create DataFrames
-            schema = StructType([
-                StructField("label", DoubleType(), True),
-                StructField("features", VectorIndexer.VectorUDT(), True)
-            ])
-            
+            # Create DataFrames - PySpark will automatically infer the schema
             self.training_data = self.spark.createDataFrame(train_data, ["label", "features"])
             self.test_data = self.spark.createDataFrame(test_data, ["label", "features"])
             
@@ -252,12 +246,6 @@ class DecisionTreeCrossValidatorAnalysis:
         try:
             logger.info("🔧 Setting up ML pipeline...")
             
-            # Index labels (convert string labels to numeric if needed)
-            label_indexer = StringIndexer() \
-                .setInputCol("label") \
-                .setOutputCol("indexedLabel") \
-                .setHandleInvalid("keep")
-            
             # Index categorical features automatically
             feature_indexer = VectorIndexer() \
                 .setInputCol("features") \
@@ -266,29 +254,21 @@ class DecisionTreeCrossValidatorAnalysis:
             
             # Decision Tree Classifier
             decision_tree = DecisionTreeClassifier() \
-                .setLabelCol("indexedLabel") \
+                .setLabelCol("label") \
                 .setFeaturesCol("indexedFeatures") \
                 .setPredictionCol("prediction") \
                 .setProbabilityCol("probability") \
                 .setRawPredictionCol("rawPrediction") \
                 .setSeed(42)  # For reproducibility
             
-            # Convert indexed labels back to original labels for predictions
-            label_converter = IndexToString() \
-                .setInputCol("prediction") \
-                .setOutputCol("predictedLabel") \
-                .setLabels(label_indexer.labelsArray[0])
-            
-            # Create pipeline
+            # Create pipeline (simplified without label indexing since we have numeric labels)
             pipeline = Pipeline(stages=[
-                label_indexer,
                 feature_indexer,
-                decision_tree,
-                label_converter
+                decision_tree
             ])
             
             logger.info("✅ ML pipeline configured")
-            logger.info("   Stages: Label Indexer → Feature Indexer → Decision Tree → Label Converter")
+            logger.info("   Stages: Feature Indexer → Decision Tree")
             
             return pipeline, decision_tree
             
@@ -313,7 +293,7 @@ class DecisionTreeCrossValidatorAnalysis:
             param_grid = ParamGridBuilder() \
                 .addGrid(decision_tree.maxDepth, [3, 5, 7, 10, 15]) \
                 .addGrid(decision_tree.minInstancesPerNode, [1, 5, 10, 20]) \
-                .addGrid(decision_tree.minInfoGain, [0.0, 0.01, 0.05, 0.1]) \
+                .addGrid(decision_tree.minInfoGain, [0.0, 0.01, 0.05]) \
                 .addGrid(decision_tree.impurity, ["gini", "entropy"]) \
                 .addGrid(decision_tree.maxBins, [16, 32, 64]) \
                 .build()
@@ -353,7 +333,7 @@ class DecisionTreeCrossValidatorAnalysis:
             
             # Create evaluator
             evaluator = MulticlassClassificationEvaluator() \
-                .setLabelCol("indexedLabel") \
+                .setLabelCol("label") \
                 .setPredictionCol("prediction") \
                 .setMetricName("accuracy")
             
@@ -479,7 +459,7 @@ class DecisionTreeCrossValidatorAnalysis:
             
             # Show sample predictions
             logger.info(f"📋 Sample predictions:")
-            self.predictions.select("label", "indexedLabel", "prediction", "predictedLabel", "probability") \
+            self.predictions.select("label", "prediction", "probability") \
                 .show(10, truncate=False)
             
             # Confusion matrix analysis
@@ -504,16 +484,16 @@ class DecisionTreeCrossValidatorAnalysis:
             # Create evaluators for different metrics
             evaluators = {
                 'accuracy': MulticlassClassificationEvaluator(
-                    labelCol="indexedLabel", predictionCol="prediction", metricName="accuracy"
+                    labelCol="label", predictionCol="prediction", metricName="accuracy"
                 ),
                 'f1': MulticlassClassificationEvaluator(
-                    labelCol="indexedLabel", predictionCol="prediction", metricName="f1"
+                    labelCol="label", predictionCol="prediction", metricName="f1"
                 ),
                 'weightedPrecision': MulticlassClassificationEvaluator(
-                    labelCol="indexedLabel", predictionCol="prediction", metricName="weightedPrecision"
+                    labelCol="label", predictionCol="prediction", metricName="weightedPrecision"
                 ),
                 'weightedRecall': MulticlassClassificationEvaluator(
-                    labelCol="indexedLabel", predictionCol="prediction", metricName="weightedRecall"
+                    labelCol="label", predictionCol="prediction", metricName="weightedRecall"
                 )
             }
             
@@ -541,14 +521,14 @@ class DecisionTreeCrossValidatorAnalysis:
             logger.info("🔍 Analyzing confusion matrix...")
             
             # Create confusion matrix
-            confusion_matrix = self.predictions.groupBy("indexedLabel", "prediction").count()
+            confusion_matrix = self.predictions.groupBy("label", "prediction").count()
             
             logger.info("   Confusion Matrix:")
-            confusion_matrix.orderBy("indexedLabel", "prediction").show()
+            confusion_matrix.orderBy("label", "prediction").show()
             
             # Calculate per-class metrics
             total_predictions = self.predictions.count()
-            correct_predictions = self.predictions.filter(col("indexedLabel") == col("prediction")).count()
+            correct_predictions = self.predictions.filter(col("label") == col("prediction")).count()
             
             overall_accuracy = correct_predictions / total_predictions
             logger.info(f"   Overall Accuracy: {overall_accuracy:.4f} ({correct_predictions}/{total_predictions})")
