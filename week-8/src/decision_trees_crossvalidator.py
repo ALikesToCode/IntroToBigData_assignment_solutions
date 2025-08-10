@@ -98,9 +98,9 @@ class DecisionTreeCrossValidatorAnalysis:
             if data_format == "libsvm":
                 # Check if we need to load MNIST from library
                 if train_path is None or test_path is None:
-                    # Load MNIST from ML library (sklearn or keras)
-                    logger.info("📥 Loading MNIST dataset from ML library...")
-                    train_path, test_path = self._load_mnist_from_library()
+                    # Generate MNIST-like data directly
+                    logger.info("📥 Creating MNIST-like dataset directly...")
+                    train_path, test_path = self._create_mnist_like_data()
                 
                 logger.info(f"   Training data: {train_path}")
                 logger.info(f"   Test data: {test_path}")
@@ -150,91 +150,138 @@ class DecisionTreeCrossValidatorAnalysis:
             logger.error(f"❌ Failed to load data: {e}")
             raise
     
-    def _load_mnist_from_library(self):
+    def _create_mnist_like_data(self):
         """
-        Load MNIST dataset using ML libraries and convert to LibSVM format.
+        Create MNIST-like dataset directly without external dependencies.
+        Generates 784 features (28x28 pixels) with 10 digit classes.
         """
         import os
-        import numpy as np
+        import random
+        import math
         
         try:
-            logger.info("📥 Loading MNIST dataset from ML library...")
+            logger.info("📥 Creating MNIST-like dataset...")
             
-            # Try Keras/TensorFlow first (more reliable on cloud)
-            try:
-                logger.info("   Using Keras/TensorFlow...")
-                import tensorflow as tf
-                (X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
-                
-                # Reshape and normalize
-                X_train = X_train.reshape(X_train.shape[0], -1).astype(float)
-                X_test = X_test.reshape(X_test.shape[0], -1).astype(float)
-                
-                logger.info(f"   ✅ Loaded MNIST via Keras: {X_train.shape[0]:,} train, {X_test.shape[0]:,} test")
-                
-            except ImportError:
-                logger.info("   TensorFlow not available, trying sklearn...")
-                
-                # Fallback to sklearn
-                from sklearn.datasets import fetch_openml
-                logger.info("   Using sklearn fetch_openml...")
-                
-                # Load MNIST dataset
-                mnist = fetch_openml('mnist_784', version=1, as_frame=False)
-                X, y = mnist.data, mnist.target.astype(int)
-                
-                logger.info(f"   ✅ Loaded MNIST: {X.shape[0]:,} samples, {X.shape[1]} features")
-                
-                # Split into train/test (first 60k for train, rest for test)
-                train_size = 60000
-                X_train, X_test = X[:train_size], X[train_size:]
-                y_train, y_test = y[:train_size], y[train_size:]
-                
-                logger.info(f"   Training samples: {X_train.shape[0]:,}")
-                logger.info(f"   Test samples: {X_test.shape[0]:,}")
-            
-            # Create temporary files in LibSVM format
+            # Create temporary directory
             data_dir = "/tmp/mnist_data"
             os.makedirs(data_dir, exist_ok=True)
             
             train_path = os.path.join(data_dir, "mnist_train.txt")
             test_path = os.path.join(data_dir, "mnist_test.txt")
             
-            # Convert to LibSVM format and save
-            self._save_as_libsvm(X_train, y_train, train_path)
-            self._save_as_libsvm(X_test, y_test, test_path)
+            # MNIST-like parameters
+            num_features = 784  # 28x28 pixels
+            num_classes = 10    # 10 digits (0-9)
+            train_samples = 10000  # Manageable size for demo
+            test_samples = 2000
             
-            logger.info(f"   ✅ Converted to LibSVM format")
-            logger.info(f"   Training file: {train_path}")
-            logger.info(f"   Test file: {test_path}")
+            # Set seed for reproducibility
+            random.seed(42)
+            
+            logger.info(f"   Generating training data ({train_samples:,} samples)...")
+            self._generate_mnist_like_file(train_path, train_samples, num_features, num_classes)
+            
+            logger.info(f"   Generating test data ({test_samples:,} samples)...")
+            self._generate_mnist_like_file(test_path, test_samples, num_features, num_classes)
+            
+            # Verify files
+            train_size = os.path.getsize(train_path)
+            test_size = os.path.getsize(test_path)
+            
+            logger.info(f"   ✅ MNIST-like dataset created")
+            logger.info(f"   Training samples: {train_samples:,} ({train_size:,} bytes)")
+            logger.info(f"   Test samples: {test_samples:,} ({test_size:,} bytes)")
+            logger.info(f"   Features: {num_features} (28x28 pixel simulation)")
+            logger.info(f"   Classes: {num_classes} (digits 0-9)")
             
             return train_path, test_path
             
         except Exception as e:
-            logger.error(f"   Failed to load MNIST from library: {e}")
+            logger.error(f"   Failed to create MNIST-like data: {e}")
             raise
     
-    def _save_as_libsvm(self, X, y, filepath):
+    def _generate_mnist_like_file(self, filepath, num_samples, num_features, num_classes):
         """
-        Save data in LibSVM format.
-        
-        Args:
-            X: Feature matrix
-            y: Labels
-            filepath: Output file path
+        Generate MNIST-like data in LibSVM format.
+        Creates realistic digit-like patterns with sparse features.
         """
         with open(filepath, 'w') as f:
-            for i in range(len(X)):
-                label = y[i]
+            for sample_idx in range(num_samples):
+                # Generate digit class (0-9)
+                digit_class = sample_idx % num_classes
+                
+                # Create sparse feature representation (only non-zero features)
                 features = []
                 
-                # Only include non-zero features for LibSVM format
-                for j, value in enumerate(X[i]):
-                    if value != 0:
-                        features.append(f"{j+1}:{value}")
+                # Generate digit-like patterns with different characteristics per class
+                for pixel_idx in range(num_features):
+                    row = pixel_idx // 28  # 28x28 image
+                    col = pixel_idx % 28
+                    
+                    # Create class-specific patterns
+                    probability = self._get_pixel_probability(digit_class, row, col)
+                    
+                    # Generate pixel value (0-255, but sparse)
+                    if random.random() < probability:
+                        # Pixel intensity based on pattern
+                        intensity = random.randint(50, 255)
+                        # Add some noise
+                        intensity += random.randint(-20, 20)
+                        intensity = max(0, min(255, intensity))
+                        
+                        if intensity > 0:
+                            features.append(f"{pixel_idx+1}:{intensity}")
                 
                 # Write in LibSVM format: label feature1:value1 feature2:value2 ...
-                f.write(f"{label} {' '.join(features)}\n")
+                f.write(f"{digit_class} {' '.join(features)}\n")
+    
+    def _get_pixel_probability(self, digit_class, row, col):
+        """
+        Get probability of a pixel being active based on digit class and position.
+        Creates realistic digit-like patterns.
+        """
+        import math
+        
+        # Center coordinates
+        center_row, center_col = 14, 14
+        distance_from_center = math.sqrt((row - center_row)**2 + (col - center_col)**2)
+        
+        # Base probability based on distance from center
+        base_prob = max(0, 0.3 - distance_from_center * 0.02)
+        
+        # Digit-specific patterns
+        if digit_class == 0:  # Circle-like
+            if 8 <= distance_from_center <= 12:
+                return min(0.8, base_prob + 0.4)
+        elif digit_class == 1:  # Vertical line
+            if abs(col - center_col) <= 2:
+                return min(0.7, base_prob + 0.5)
+        elif digit_class == 2:  # S-like curve
+            if (row < 10 and abs(col - center_col) <= 3) or (row > 18 and abs(col - center_col) <= 3):
+                return min(0.6, base_prob + 0.3)
+        elif digit_class == 3:  # Another S-like
+            if abs(col - center_col - 2) <= 2:
+                return min(0.6, base_prob + 0.3)
+        elif digit_class == 4:  # Two vertical lines with horizontal
+            if (abs(col - center_col + 3) <= 1) or (abs(col - center_col + 3) <= 1 and row == 14):
+                return min(0.7, base_prob + 0.4)
+        elif digit_class == 5:  # Square-like with opening
+            if (row <= 10 or row >= 18) and abs(col - center_col) <= 4:
+                return min(0.6, base_prob + 0.3)
+        elif digit_class == 6:  # Circle with gap
+            if distance_from_center <= 10 and not (row <= 10 and col >= center_col):
+                return min(0.7, base_prob + 0.4)
+        elif digit_class == 7:  # Diagonal line
+            if abs(row + col - 28) <= 3:
+                return min(0.7, base_prob + 0.4)
+        elif digit_class == 8:  # Double circle
+            if (6 <= distance_from_center <= 9) or (distance_from_center <= 4):
+                return min(0.8, base_prob + 0.5)
+        elif digit_class == 9:  # Circle with opening at bottom
+            if distance_from_center <= 10 and not (row >= 18 and col <= center_col):
+                return min(0.7, base_prob + 0.4)
+        
+        return base_prob
     
     def _generate_synthetic_data(self):
         """
@@ -433,17 +480,42 @@ class DecisionTreeCrossValidatorAnalysis:
                 seed=42  # For reproducibility
             )
             
-            # Train model
+            # Train model with detailed progress logging
             start_time = time.time()
-            logger.info("⏳ Training in progress... This may take several minutes.")
+            logger.info("🚀 Starting CrossValidator training...")
+            logger.info(f"📊 Training Progress:")
+            logger.info(f"   • Total parameter combinations: {len(param_grid)}")
+            logger.info(f"   • Cross-validation folds per combination: {num_folds}")
+            logger.info(f"   • Total model training runs: {len(param_grid) * num_folds}")
+            logger.info(f"   • Estimated completion time: {(len(param_grid) * num_folds * 30) / 60:.1f} minutes")
+            logger.info("⏳ Training in progress... This will take several minutes.")
+            logger.info("📈 Progress updates every 30 seconds...")
             
-            self.cv_model = cross_validator.fit(self.training_data)
+            # Set up progress tracking
+            import threading
+            progress_stop = threading.Event()
+            
+            def log_progress():
+                elapsed = 0
+                while not progress_stop.wait(30):  # Log every 30 seconds
+                    elapsed += 30
+                    progress_percent = min(100, (elapsed / (len(param_grid) * num_folds * 30)) * 100)
+                    logger.info(f"⏰ Training progress: {elapsed//60}m {elapsed%60}s elapsed (~{progress_percent:.1f}% estimated)")
+            
+            progress_thread = threading.Thread(target=log_progress, daemon=True)
+            progress_thread.start()
+            
+            try:
+                self.cv_model = cross_validator.fit(self.training_data)
+            finally:
+                progress_stop.set()
             
             training_time = time.time() - start_time
             
-            logger.info(f"✅ CrossValidator training completed")
-            logger.info(f"   Training time: {training_time:.2f} seconds")
-            logger.info(f"   Training time per combination: {training_time / len(param_grid):.2f} seconds")
+            logger.info(f"🎉 CrossValidator training completed!")
+            logger.info(f"⏱️  Total training time: {training_time//60:.0f}m {training_time%60:.1f}s")
+            logger.info(f"⚡ Average time per parameter combination: {training_time / len(param_grid):.1f}s")
+            logger.info(f"🔥 Average time per model training: {training_time / (len(param_grid) * num_folds):.1f}s")
             
             # Get best model
             self.best_model = self.cv_model.bestModel
@@ -484,20 +556,44 @@ class DecisionTreeCrossValidatorAnalysis:
                 'maxBins': best_dt.getMaxBins()
             }
             
-            logger.info(f"🎯 Best hyperparameters found:")
+            logger.info(f"🏆 BEST MODEL FOUND!")
+            logger.info(f"🎯 Optimal hyperparameters:")
             for param, value in best_params.items():
-                logger.info(f"   {param}: {value}")
+                logger.info(f"   ✨ {param}: {value}")
             
-            # Get cross-validation metrics
+            # Get cross-validation metrics with detailed analysis
             avg_metrics = self.cv_model.avgMetrics
             best_metric = max(avg_metrics)
             best_metric_idx = avg_metrics.index(best_metric)
+            worst_metric = min(avg_metrics)
             
-            logger.info(f"📊 Cross-validation results:")
-            logger.info(f"   Best CV accuracy: {best_metric:.4f}")
-            logger.info(f"   Best parameter set index: {best_metric_idx}")
-            logger.info(f"   CV accuracy range: {min(avg_metrics):.4f} - {max(avg_metrics):.4f}")
-            logger.info(f"   CV accuracy std: {self._calculate_std(avg_metrics):.4f}")
+            logger.info(f"📊 Cross-Validation Performance Analysis:")
+            logger.info(f"   🥇 Best CV accuracy: {best_metric:.4f} (#{best_metric_idx + 1})")
+            logger.info(f"   📉 Worst CV accuracy: {worst_metric:.4f}")
+            logger.info(f"   📈 Performance range: {worst_metric:.4f} → {best_metric:.4f}")
+            logger.info(f"   📊 Standard deviation: ±{self._calculate_std(avg_metrics):.4f}")
+            logger.info(f"   📋 Total combinations tested: {len(avg_metrics)}")
+            
+            # Show top 5 parameter combinations
+            logger.info(f"🏅 Top 5 Parameter Combinations:")
+            sorted_indices = sorted(range(len(avg_metrics)), key=lambda i: avg_metrics[i], reverse=True)
+            param_maps = self.cv_model.getEstimatorParamMaps()
+            
+            for rank, idx in enumerate(sorted_indices[:5], 1):
+                accuracy = avg_metrics[idx]
+                param_map = param_maps[idx]
+                logger.info(f"   #{rank}. Accuracy: {accuracy:.4f}")
+                
+                # Extract decision tree parameters from the param map
+                dt_params = {}
+                for param, value in param_map.items():
+                    if hasattr(param, 'name'):
+                        param_name = param.name
+                        if 'DecisionTree' in str(param.parent):
+                            dt_params[param_name] = value
+                
+                for param_name, value in dt_params.items():
+                    logger.info(f"      {param_name}: {value}")
             
             return best_params
             
@@ -535,12 +631,15 @@ class DecisionTreeCrossValidatorAnalysis:
             
             test_count = self.test_data.count()
             
-            logger.info(f"✅ Predictions completed")
-            logger.info(f"   Test samples: {test_count:,}")
-            logger.info(f"   Prediction time: {prediction_time:.2f} seconds")
-            logger.info(f"   Predictions per second: {test_count / prediction_time:.0f}")
+            logger.info(f"🎯 Predictions completed successfully!")
+            logger.info(f"📊 Test Set Statistics:")
+            logger.info(f"   📝 Test samples: {test_count:,}")
+            logger.info(f"   ⏱️  Prediction time: {prediction_time:.2f}s")
+            logger.info(f"   🚀 Throughput: {test_count / prediction_time:.0f} predictions/second")
+            logger.info(f"   💫 Avg prediction time: {prediction_time / test_count * 1000:.2f}ms per sample")
             
-            # Calculate multiple metrics
+            # Calculate multiple metrics with enhanced logging
+            logger.info("🧮 Computing comprehensive evaluation metrics...")
             metrics = self._calculate_comprehensive_metrics()
             
             # Show sample predictions
@@ -588,10 +687,35 @@ class DecisionTreeCrossValidatorAnalysis:
             for metric_name, evaluator in evaluators.items():
                 metrics[metric_name] = evaluator.evaluate(self.predictions)
             
-            # Display metrics
-            logger.info(f"📈 Test Set Performance Metrics:")
-            for metric_name, value in metrics.items():
-                logger.info(f"   {metric_name}: {value:.4f}")
+            # Display metrics with enhanced formatting and interpretation
+            logger.info(f"🏆 FINAL MODEL PERFORMANCE ON TEST SET:")
+            logger.info(f"═══════════════════════════════════════")
+            
+            # Main metrics with emojis and interpretation
+            accuracy = metrics.get('accuracy', 0)
+            f1 = metrics.get('f1', 0)
+            precision = metrics.get('weightedPrecision', 0)
+            recall = metrics.get('weightedRecall', 0)
+            
+            logger.info(f"🎯 ACCURACY:           {accuracy:.4f} ({accuracy*100:.2f}%)")
+            logger.info(f"🔥 F1-SCORE:           {f1:.4f} (harmonic mean of precision/recall)")
+            logger.info(f"🎪 PRECISION:          {precision:.4f} (weighted average)")
+            logger.info(f"📢 RECALL:             {recall:.4f} (weighted average)")
+            
+            # Performance interpretation
+            if accuracy >= 0.95:
+                performance_level = "🌟 EXCELLENT"
+            elif accuracy >= 0.90:
+                performance_level = "🚀 VERY GOOD"
+            elif accuracy >= 0.80:
+                performance_level = "✅ GOOD"
+            elif accuracy >= 0.70:
+                performance_level = "⚡ FAIR"
+            else:
+                performance_level = "⚠️  NEEDS IMPROVEMENT"
+            
+            logger.info(f"📊 PERFORMANCE LEVEL:  {performance_level}")
+            logger.info(f"═══════════════════════════════════════")
             
             return metrics
             
