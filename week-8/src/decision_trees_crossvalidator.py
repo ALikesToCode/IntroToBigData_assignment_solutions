@@ -160,8 +160,22 @@ class DecisionTreeCrossValidatorAnalysis:
         try:
             logger.info("📥 Loading MNIST dataset from ML library...")
             
-            # Try to load MNIST from sklearn first
+            # Try Keras/TensorFlow first (more reliable on cloud)
             try:
+                logger.info("   Using Keras/TensorFlow...")
+                import tensorflow as tf
+                (X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
+                
+                # Reshape and normalize
+                X_train = X_train.reshape(X_train.shape[0], -1).astype(float)
+                X_test = X_test.reshape(X_test.shape[0], -1).astype(float)
+                
+                logger.info(f"   ✅ Loaded MNIST via Keras: {X_train.shape[0]:,} train, {X_test.shape[0]:,} test")
+                
+            except ImportError:
+                logger.info("   TensorFlow not available, trying sklearn...")
+                
+                # Fallback to sklearn
                 from sklearn.datasets import fetch_openml
                 logger.info("   Using sklearn fetch_openml...")
                 
@@ -178,19 +192,6 @@ class DecisionTreeCrossValidatorAnalysis:
                 
                 logger.info(f"   Training samples: {X_train.shape[0]:,}")
                 logger.info(f"   Test samples: {X_test.shape[0]:,}")
-                
-            except ImportError:
-                logger.info("   sklearn not available, using keras...")
-                
-                # Try keras MNIST
-                import tensorflow as tf
-                (X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
-                
-                # Reshape and normalize
-                X_train = X_train.reshape(X_train.shape[0], -1).astype(float)
-                X_test = X_test.reshape(X_test.shape[0], -1).astype(float)
-                
-                logger.info(f"   ✅ Loaded MNIST via Keras: {X_train.shape[0]:,} train, {X_test.shape[0]:,} test")
             
             # Create temporary files in LibSVM format
             data_dir = "/tmp/mnist_data"
