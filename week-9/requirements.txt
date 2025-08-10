@@ -1,0 +1,43 @@
+# Week 9: Real-Time Image Classification with Spark Streaming
+# Author: Abhyudaya B Tharakan 22f3001492
+# Course: Introduction to Big Data
+# Date: August 2025
+
+# Core Spark and streaming dependencies
+pyspark>=3.3.0
+
+# Machine Learning and Image Processing
+tensorflow>=2.13.0
+pillow>=10.0.0
+numpy>=1.21.0
+
+# Google Cloud Platform clients
+google-cloud-storage>=2.10.0
+google-cloud-pubsub>=2.18.0
+google-cloud-bigquery>=3.11.0
+
+# Kafka streaming (for enhanced real-time capabilities)
+kafka-python>=2.0.2
+
+# Data processing and utilities
+pandas>=1.5.0
+scikit-learn>=1.3.0
+
+# Development and testing
+pytest>=7.0.0
+jupyter>=1.0.0
+
+# For image generation and simulation
+matplotlib>=3.5.0
+
+# Command line argument parsing
+argparse
+
+# JSON and data serialization
+ujson>=5.0.0
+
+# Performance monitoring (optional)
+psutil>=5.9.0
+
+# Logging and debugging
+structlog>=23.0.0
