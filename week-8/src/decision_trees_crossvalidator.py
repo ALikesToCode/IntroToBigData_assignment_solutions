@@ -96,11 +96,11 @@ class DecisionTreeCrossValidatorAnalysis:
             logger.info(f"📖 Loading data in {data_format} format...")
             
             if data_format == "libsvm":
-                # Check if we need to download Databricks datasets
+                # Check if we need to load MNIST from library
                 if train_path is None or test_path is None:
-                    # Try to download from public URLs
-                    logger.info("📥 Downloading Databricks MNIST dataset...")
-                    train_path, test_path = self._download_databricks_mnist()
+                    # Load MNIST from ML library (sklearn or keras)
+                    logger.info("📥 Loading MNIST dataset from ML library...")
+                    train_path, test_path = self._load_mnist_from_library()
                 
                 logger.info(f"   Training data: {train_path}")
                 logger.info(f"   Test data: {test_path}")
@@ -150,139 +150,90 @@ class DecisionTreeCrossValidatorAnalysis:
             logger.error(f"❌ Failed to load data: {e}")
             raise
     
-    def _download_databricks_mnist(self):
+    def _load_mnist_from_library(self):
         """
-        Download MNIST dataset from public sources.
+        Load MNIST dataset using ML libraries and convert to LibSVM format.
         """
         import os
-        import urllib.request
-        import gzip
-        import shutil
+        import numpy as np
         
         try:
-            # Create local directory for data
+            logger.info("📥 Loading MNIST dataset from ML library...")
+            
+            # Try to load MNIST from sklearn first
+            try:
+                from sklearn.datasets import fetch_openml
+                logger.info("   Using sklearn fetch_openml...")
+                
+                # Load MNIST dataset
+                mnist = fetch_openml('mnist_784', version=1, as_frame=False)
+                X, y = mnist.data, mnist.target.astype(int)
+                
+                logger.info(f"   ✅ Loaded MNIST: {X.shape[0]:,} samples, {X.shape[1]} features")
+                
+                # Split into train/test (first 60k for train, rest for test)
+                train_size = 60000
+                X_train, X_test = X[:train_size], X[train_size:]
+                y_train, y_test = y[:train_size], y[train_size:]
+                
+                logger.info(f"   Training samples: {X_train.shape[0]:,}")
+                logger.info(f"   Test samples: {X_test.shape[0]:,}")
+                
+            except ImportError:
+                logger.info("   sklearn not available, using keras...")
+                
+                # Try keras MNIST
+                import tensorflow as tf
+                (X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
+                
+                # Reshape and normalize
+                X_train = X_train.reshape(X_train.shape[0], -1).astype(float)
+                X_test = X_test.reshape(X_test.shape[0], -1).astype(float)
+                
+                logger.info(f"   ✅ Loaded MNIST via Keras: {X_train.shape[0]:,} train, {X_test.shape[0]:,} test")
+            
+            # Create temporary files in LibSVM format
             data_dir = "/tmp/mnist_data"
             os.makedirs(data_dir, exist_ok=True)
-            
-            # URLs for MNIST dataset (multiple sources for redundancy)
-            urls = {
-                "train": [
-                    "https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass/mnist.scale",
-                    "https://raw.githubusercontent.com/databricks/spark-deep-learning/master/data/mnist-digits/data-001/mnist-digits-train.txt",
-                    "https://raw.githubusercontent.com/apache/spark/master/data/mllib/sample_libsvm_data.txt"
-                ],
-                "test": [
-                    "https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass/mnist.scale.t",
-                    "https://raw.githubusercontent.com/databricks/spark-deep-learning/master/data/mnist-digits/data-001/mnist-digits-test.txt",
-                    "https://raw.githubusercontent.com/apache/spark/master/data/mllib/sample_libsvm_data.txt"
-                ]
-            }
             
             train_path = os.path.join(data_dir, "mnist_train.txt")
             test_path = os.path.join(data_dir, "mnist_test.txt")
             
-            # Try to download training data
-            if not os.path.exists(train_path) or os.path.getsize(train_path) < 1000:
-                logger.info("   Downloading training data...")
-                for url in urls["train"]:
-                    try:
-                        logger.info(f"   Trying: {url[:60]}...")
-                        temp_file = train_path + ".tmp"
-                        urllib.request.urlretrieve(url, temp_file)
-                        
-                        # Check if it's compressed
-                        if url.endswith('.bz2'):
-                            import bz2
-                            with bz2.open(temp_file, 'rb') as f_in:
-                                with open(train_path, 'wb') as f_out:
-                                    f_out.write(f_in.read())
-                            os.remove(temp_file)
-                        elif url.endswith('.gz'):
-                            with gzip.open(temp_file, 'rb') as f_in:
-                                with open(train_path, 'wb') as f_out:
-                                    f_out.write(f_in.read())
-                            os.remove(temp_file)
-                        else:
-                            shutil.move(temp_file, train_path)
-                        
-                        if os.path.getsize(train_path) > 1000:
-                            logger.info(f"   ✅ Downloaded training data: {os.path.getsize(train_path):,} bytes")
-                            break
-                    except Exception as e:
-                        logger.warning(f"   Failed: {e}")
-                        if os.path.exists(train_path):
-                            os.remove(train_path)
-                        continue
+            # Convert to LibSVM format and save
+            self._save_as_libsvm(X_train, y_train, train_path)
+            self._save_as_libsvm(X_test, y_test, test_path)
             
-            # Try to download test data
-            if not os.path.exists(test_path) or os.path.getsize(test_path) < 1000:
-                logger.info("   Downloading test data...")
-                for url in urls["test"]:
-                    try:
-                        logger.info(f"   Trying: {url[:60]}...")
-                        temp_file = test_path + ".tmp"
-                        urllib.request.urlretrieve(url, temp_file)
-                        
-                        # Check if it's compressed
-                        if url.endswith('.bz2'):
-                            import bz2
-                            with bz2.open(temp_file, 'rb') as f_in:
-                                with open(test_path, 'wb') as f_out:
-                                    f_out.write(f_in.read())
-                            os.remove(temp_file)
-                        elif url.endswith('.gz'):
-                            with gzip.open(temp_file, 'rb') as f_in:
-                                with open(test_path, 'wb') as f_out:
-                                    f_out.write(f_in.read())
-                            os.remove(temp_file)
-                        else:
-                            shutil.move(temp_file, test_path)
-                        
-                        if os.path.getsize(test_path) > 1000:
-                            logger.info(f"   ✅ Downloaded test data: {os.path.getsize(test_path):,} bytes")
-                            break
-                    except Exception as e:
-                        logger.warning(f"   Failed: {e}")
-                        if os.path.exists(test_path):
-                            os.remove(test_path)
-                        continue
+            logger.info(f"   ✅ Converted to LibSVM format")
+            logger.info(f"   Training file: {train_path}")
+            logger.info(f"   Test file: {test_path}")
             
-            # If files exist, return paths
-            if os.path.exists(train_path) and os.path.exists(test_path):
-                # Check file sizes
-                train_size = os.path.getsize(train_path)
-                test_size = os.path.getsize(test_path)
-                logger.info(f"   Training file size: {train_size:,} bytes")
-                logger.info(f"   Test file size: {test_size:,} bytes")
-                
-                if train_size > 100 and test_size > 100:  # Basic validation
-                    return train_path, test_path
-            
-            # If download failed, try to copy from GCS if available
-            try:
-                logger.info("   Attempting to copy from GCS...")
-                import subprocess
-                
-                # Try to copy from a known GCS location
-                gcs_train = "gs://spark-lib/bigdata/mnist/mnist_train.txt"
-                gcs_test = "gs://spark-lib/bigdata/mnist/mnist_test.txt"
-                
-                subprocess.run(f"gsutil cp {gcs_train} {train_path}", shell=True, check=True)
-                subprocess.run(f"gsutil cp {gcs_test} {test_path}", shell=True, check=True)
-                
-                if os.path.exists(train_path) and os.path.exists(test_path):
-                    logger.info("   ✅ Successfully copied from GCS")
-                    return train_path, test_path
-            except:
-                pass
-            
-            # If all else fails, generate synthetic data
-            logger.warning("   ⚠️ Could not download MNIST data, will use synthetic data")
-            raise Exception("Failed to download MNIST dataset")
+            return train_path, test_path
             
         except Exception as e:
-            logger.error(f"   Download failed: {e}")
+            logger.error(f"   Failed to load MNIST from library: {e}")
             raise
+    
+    def _save_as_libsvm(self, X, y, filepath):
+        """
+        Save data in LibSVM format.
+        
+        Args:
+            X: Feature matrix
+            y: Labels
+            filepath: Output file path
+        """
+        with open(filepath, 'w') as f:
+            for i in range(len(X)):
+                label = y[i]
+                features = []
+                
+                # Only include non-zero features for LibSVM format
+                for j, value in enumerate(X[i]):
+                    if value != 0:
+                        features.append(f"{j+1}:{value}")
+                
+                # Write in LibSVM format: label feature1:value1 feature2:value2 ...
+                f.write(f"{label} {' '.join(features)}\n")
     
     def _generate_synthetic_data(self):
         """
