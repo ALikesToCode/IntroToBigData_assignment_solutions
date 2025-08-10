@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 # Configuration
-PROJECT_ID = "spheric-gecko-467914-f8"
+PROJECT_ID = "steady-triumph-447006-f8"
 REGION = "us-central1"
 CLUSTER_NAME = "week8-ml-cluster"
 BUCKET_NAME = f"{PROJECT_ID}-week8-ml"
@@ -98,7 +98,6 @@ def create_cluster():
         --worker-boot-disk-size=50GB \
         --image-version=2.1-debian11 \
         --properties="spark:spark.executor.memory=2g,spark:spark.driver.memory=2g" \
-        --initialization-actions="" \
         --max-idle=30m \
         --max-age=3h
     """
