@@ -96,11 +96,11 @@ class DecisionTreeCrossValidatorAnalysis:
             logger.info(f"📖 Loading data in {data_format} format...")
             
             if data_format == "libsvm":
-                # Use Databricks sample datasets (MNIST digits)
-                if train_path is None:
-                    train_path = "/databricks-datasets/mnist-digits/data-001/mnist-digits-train.txt"
-                if test_path is None:
-                    test_path = "/databricks-datasets/mnist-digits/data-001/mnist-digits-test.txt"
+                # Check if we need to download Databricks datasets
+                if train_path is None or test_path is None:
+                    # Try to download from public URLs
+                    logger.info("📥 Downloading Databricks MNIST dataset...")
+                    train_path, test_path = self._download_databricks_mnist()
                 
                 logger.info(f"   Training data: {train_path}")
                 logger.info(f"   Test data: {test_path}")
@@ -109,7 +109,7 @@ class DecisionTreeCrossValidatorAnalysis:
                     self.training_data = self.spark.read.format("libsvm").load(train_path)
                     self.test_data = self.spark.read.format("libsvm").load(test_path)
                 except Exception as e:
-                    logger.warning(f"⚠️ Could not load Databricks datasets: {e}")
+                    logger.warning(f"⚠️ Could not load datasets: {e}")
                     logger.info("📝 Generating synthetic dataset instead...")
                     self._generate_synthetic_data()
                     return
@@ -148,6 +148,140 @@ class DecisionTreeCrossValidatorAnalysis:
             
         except Exception as e:
             logger.error(f"❌ Failed to load data: {e}")
+            raise
+    
+    def _download_databricks_mnist(self):
+        """
+        Download MNIST dataset from public sources.
+        """
+        import os
+        import urllib.request
+        import gzip
+        import shutil
+        
+        try:
+            # Create local directory for data
+            data_dir = "/tmp/mnist_data"
+            os.makedirs(data_dir, exist_ok=True)
+            
+            # URLs for MNIST dataset (multiple sources for redundancy)
+            urls = {
+                "train": [
+                    "https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass/mnist.scale",
+                    "https://raw.githubusercontent.com/databricks/spark-deep-learning/master/data/mnist-digits/data-001/mnist-digits-train.txt",
+                    "https://raw.githubusercontent.com/apache/spark/master/data/mllib/sample_libsvm_data.txt"
+                ],
+                "test": [
+                    "https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass/mnist.scale.t",
+                    "https://raw.githubusercontent.com/databricks/spark-deep-learning/master/data/mnist-digits/data-001/mnist-digits-test.txt",
+                    "https://raw.githubusercontent.com/apache/spark/master/data/mllib/sample_libsvm_data.txt"
+                ]
+            }
+            
+            train_path = os.path.join(data_dir, "mnist_train.txt")
+            test_path = os.path.join(data_dir, "mnist_test.txt")
+            
+            # Try to download training data
+            if not os.path.exists(train_path) or os.path.getsize(train_path) < 1000:
+                logger.info("   Downloading training data...")
+                for url in urls["train"]:
+                    try:
+                        logger.info(f"   Trying: {url[:60]}...")
+                        temp_file = train_path + ".tmp"
+                        urllib.request.urlretrieve(url, temp_file)
+                        
+                        # Check if it's compressed
+                        if url.endswith('.bz2'):
+                            import bz2
+                            with bz2.open(temp_file, 'rb') as f_in:
+                                with open(train_path, 'wb') as f_out:
+                                    f_out.write(f_in.read())
+                            os.remove(temp_file)
+                        elif url.endswith('.gz'):
+                            with gzip.open(temp_file, 'rb') as f_in:
+                                with open(train_path, 'wb') as f_out:
+                                    f_out.write(f_in.read())
+                            os.remove(temp_file)
+                        else:
+                            shutil.move(temp_file, train_path)
+                        
+                        if os.path.getsize(train_path) > 1000:
+                            logger.info(f"   ✅ Downloaded training data: {os.path.getsize(train_path):,} bytes")
+                            break
+                    except Exception as e:
+                        logger.warning(f"   Failed: {e}")
+                        if os.path.exists(train_path):
+                            os.remove(train_path)
+                        continue
+            
+            # Try to download test data
+            if not os.path.exists(test_path) or os.path.getsize(test_path) < 1000:
+                logger.info("   Downloading test data...")
+                for url in urls["test"]:
+                    try:
+                        logger.info(f"   Trying: {url[:60]}...")
+                        temp_file = test_path + ".tmp"
+                        urllib.request.urlretrieve(url, temp_file)
+                        
+                        # Check if it's compressed
+                        if url.endswith('.bz2'):
+                            import bz2
+                            with bz2.open(temp_file, 'rb') as f_in:
+                                with open(test_path, 'wb') as f_out:
+                                    f_out.write(f_in.read())
+                            os.remove(temp_file)
+                        elif url.endswith('.gz'):
+                            with gzip.open(temp_file, 'rb') as f_in:
+                                with open(test_path, 'wb') as f_out:
+                                    f_out.write(f_in.read())
+                            os.remove(temp_file)
+                        else:
+                            shutil.move(temp_file, test_path)
+                        
+                        if os.path.getsize(test_path) > 1000:
+                            logger.info(f"   ✅ Downloaded test data: {os.path.getsize(test_path):,} bytes")
+                            break
+                    except Exception as e:
+                        logger.warning(f"   Failed: {e}")
+                        if os.path.exists(test_path):
+                            os.remove(test_path)
+                        continue
+            
+            # If files exist, return paths
+            if os.path.exists(train_path) and os.path.exists(test_path):
+                # Check file sizes
+                train_size = os.path.getsize(train_path)
+                test_size = os.path.getsize(test_path)
+                logger.info(f"   Training file size: {train_size:,} bytes")
+                logger.info(f"   Test file size: {test_size:,} bytes")
+                
+                if train_size > 100 and test_size > 100:  # Basic validation
+                    return train_path, test_path
+            
+            # If download failed, try to copy from GCS if available
+            try:
+                logger.info("   Attempting to copy from GCS...")
+                import subprocess
+                
+                # Try to copy from a known GCS location
+                gcs_train = "gs://spark-lib/bigdata/mnist/mnist_train.txt"
+                gcs_test = "gs://spark-lib/bigdata/mnist/mnist_test.txt"
+                
+                subprocess.run(f"gsutil cp {gcs_train} {train_path}", shell=True, check=True)
+                subprocess.run(f"gsutil cp {gcs_test} {test_path}", shell=True, check=True)
+                
+                if os.path.exists(train_path) and os.path.exists(test_path):
+                    logger.info("   ✅ Successfully copied from GCS")
+                    return train_path, test_path
+            except:
+                pass
+            
+            # If all else fails, generate synthetic data
+            logger.warning("   ⚠️ Could not download MNIST data, will use synthetic data")
+            raise Exception("Failed to download MNIST dataset")
+            
+        except Exception as e:
+            logger.error(f"   Download failed: {e}")
             raise
     
     def _generate_synthetic_data(self):
@@ -681,13 +815,17 @@ def main():
     parser.add_argument('--data-format', default='libsvm', choices=['libsvm', 'csv', 'parquet'],
                        help='Input data format (default: libsvm)')
     parser.add_argument('--train-path',
-                       help='Path to training data file')
+                       help='Path to training data file (local, HDFS, or gs://)')
     parser.add_argument('--test-path',
-                       help='Path to test data file')
+                       help='Path to test data file (local, HDFS, or gs://)')
     parser.add_argument('--cv-folds', type=int, default=5,
                        help='Number of cross-validation folds (default: 5)')
     parser.add_argument('--output-report',
                        help='Path to save analysis report')
+    parser.add_argument('--auto-download', action='store_true',
+                       help='Automatically download MNIST dataset if not available')
+    parser.add_argument('--gcs-bucket',
+                       help='GCS bucket for storing downloaded data')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Enable verbose logging')
     
@@ -701,6 +839,12 @@ def main():
     try:
         # Create analyzer
         analyzer = DecisionTreeCrossValidatorAnalysis()
+        
+        # If GCS bucket specified and no paths given, use GCS paths
+        if args.gcs_bucket and not args.train_path:
+            args.train_path = f"gs://{args.gcs_bucket}/mnist/mnist_train.txt"
+            args.test_path = f"gs://{args.gcs_bucket}/mnist/mnist_test.txt"
+            logger.info(f"Using GCS paths from bucket: {args.gcs_bucket}")
         
         # Load data
         analyzer.load_data(
