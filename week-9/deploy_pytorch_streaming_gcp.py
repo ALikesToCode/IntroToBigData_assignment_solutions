@@ -21,8 +21,8 @@ from typing import Dict, Any
 # GCP Configuration
 GCP_CONFIG = {
     "project_id": "steady-triumph-447006-f8",
-    "region": "us-central1",
-    "zone": "us-central1-a",
+    "region": "asia-south1",
+    "zone": "asia-south1-a",
     "cluster_name": "week9-pytorch-streaming",
     "bucket_name": "week9-pytorch-streaming",
     "dataset_bucket": "flower-photos-dataset",
@@ -354,6 +354,7 @@ echo "PyTorch initialization complete"
         gcloud dataproc clusters create {cluster_name} \
             --project={self.project_id} \
             --region={self.region} \
+            --zone={self.zone} \
             --master-machine-type=e2-standard-2 \
             --master-boot-disk-size=30GB \
             --worker-machine-type=e2-standard-2 \
@@ -559,7 +560,7 @@ def main():
         description="Deploy PyTorch Streaming Classifier on GCP"
     )
     parser.add_argument("--project-id", help="GCP Project ID")
-    parser.add_argument("--region", default="us-central1", help="GCP Region")
+    parser.add_argument("--region", default="asia-south1", help="GCP Region")
     parser.add_argument("--cleanup", action="store_true", help="Cleanup resources")
     parser.add_argument("--kafka-job", action="store_true", help="Submit Kafka streaming job")
     
@@ -571,6 +572,8 @@ def main():
         config["project_id"] = args.project_id
     if args.region:
         config["region"] = args.region
+        # Update zone to match region
+        config["zone"] = f"{args.region}-a"
     
     # Initialize deployer
     deployer = PyTorchStreamingDeployer(config)
