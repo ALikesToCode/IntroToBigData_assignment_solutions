@@ -234,8 +234,12 @@ class PyTorchStreamingDeployer:
             --project={self.project_id} \
             --format=json 2>/dev/null
         """
-        if subprocess.run(check_cmd, shell=True, capture_output=True).returncode == 0:
-            print(f"✅ Cluster {cluster_name} already exists")
+        result = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"✅ Cluster {cluster_name} already exists - skipping creation")
+            # Show cluster info
+            cluster_info = result.stdout
+            print(f"📋 Cluster status: Active")
             return True
         
         # Create initialization script for PyTorch
@@ -325,8 +329,17 @@ echo "PyTorch initialization complete"
         
         for script in scripts:
             if os.path.exists(script):
+                # Check if file already exists in GCS
+                check_cmd = f"gcloud storage ls gs://{bucket}/scripts/{script} 2>/dev/null"
+                if subprocess.run(check_cmd, shell=True, capture_output=True).returncode == 0:
+                    print(f"✅ Script already exists: {script}")
+                    continue
+                
+                # Upload the script
                 cmd = f"gcloud storage cp {script} gs://{bucket}/scripts/"
                 self.run_command(cmd, f"Uploading {script}")
+            else:
+                print(f"⚠️  Script not found locally: {script}")
         
         return True
     
@@ -340,7 +353,6 @@ echo "PyTorch initialization complete"
         
         # Job arguments
         job_args = [
-            f"gs://{bucket}/scripts/pytorch_streaming_classifier.py",
             "--source", "file",  # Start with file monitoring
             "--input-path", f"gs://{dataset_bucket}/flower_photos/",
             "--checkpoint", f"gs://{bucket}/checkpoints/pytorch-streaming",
@@ -352,6 +364,7 @@ echo "PyTorch initialization complete"
         # Submit job
         submit_cmd = f"""
         gcloud dataproc jobs submit pyspark \
+            gs://{bucket}/scripts/pytorch_streaming_classifier.py \
             --cluster={cluster_name} \
             --region={self.region} \
             --project={self.project_id} \
@@ -380,7 +393,6 @@ echo "PyTorch initialization complete"
         master_ip = result.stdout.strip()
         
         job_args = [
-            f"gs://{bucket}/scripts/pytorch_streaming_classifier.py",
             "--source", "kafka",
             "--kafka-servers", f"{master_ip}:9092",
             "--kafka-topic", "flower-images",
@@ -392,6 +404,7 @@ echo "PyTorch initialization complete"
         
         submit_cmd = f"""
         gcloud dataproc jobs submit pyspark \
+            gs://{bucket}/scripts/pytorch_streaming_classifier.py \
             --cluster={cluster_name} \
             --region={self.region} \
             --project={self.project_id} \
