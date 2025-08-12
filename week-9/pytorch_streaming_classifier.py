@@ -70,7 +70,6 @@ except ImportError:
 # Global executor state for model caching (similar to TF version but for PyTorch)
 _EXECUTOR_STATE = {
     "model": None,
-    "model_lock": threading.Lock(),
     "device": None
 }
 
@@ -112,30 +111,26 @@ def get_or_create_model(model_name: str = "mobilenet_v2"):
     if _EXECUTOR_STATE["model"] is not None:
         return _EXECUTOR_STATE["model"], _EXECUTOR_STATE["device"]
     
-    with _EXECUTOR_STATE["model_lock"]:
-        if _EXECUTOR_STATE["model"] is not None:
-            return _EXECUTOR_STATE["model"], _EXECUTOR_STATE["device"]
-        
-        # Determine device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        _EXECUTOR_STATE["device"] = device
-        
-        # Load model (same as original notebook)
-        if model_name == "mobilenet_v2":
-            model = models.mobilenet_v2(pretrained=True)
-        elif model_name == "resnet50":
-            model = models.resnet50(pretrained=True)
-        elif model_name == "vgg16":
-            model = models.vgg16(pretrained=True)
-        else:
-            model = models.mobilenet_v2(pretrained=True)  # Default
-        
-        model = model.to(device)
-        model.eval()
-        _EXECUTOR_STATE["model"] = model
-        
-        print(f"Loaded {model_name} model on {device}", file=sys.stderr)
-        return model, device
+    # Determine device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    _EXECUTOR_STATE["device"] = device
+    
+    # Load model (same as original notebook)
+    if model_name == "mobilenet_v2":
+        model = models.mobilenet_v2(pretrained=True)
+    elif model_name == "resnet50":
+        model = models.resnet50(pretrained=True)
+    elif model_name == "vgg16":
+        model = models.vgg16(pretrained=True)
+    else:
+        model = models.mobilenet_v2(pretrained=True)  # Default
+    
+    model = model.to(device)
+    model.eval()
+    _EXECUTOR_STATE["model"] = model
+    
+    print(f"Loaded {model_name} model on {device}", file=sys.stderr)
+    return model, device
 
 
 def extract_label_from_path(path_col):
