@@ -295,10 +295,10 @@ echo "PyTorch initialization complete"
             --project={self.project_id} \
             --region={self.region} \
             --zone={self.zone} \
-            --master-machine-type=n1-highmem-4 \
-            --master-boot-disk-size=100GB \
-            --worker-machine-type=n1-highmem-4 \
-            --worker-boot-disk-size=100GB \
+            --master-machine-type=n1-standard-2 \
+            --master-boot-disk-size=50GB \
+            --worker-machine-type=n1-standard-2 \
+            --worker-boot-disk-size=50GB \
             --num-workers=2 \
             --image-version=2.1-debian11 \
             --initialization-actions=gs://{bucket}/scripts/pytorch_init.sh \
