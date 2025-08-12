@@ -347,11 +347,12 @@ echo "PyTorch initialization complete"
         upload_cmd = f"gcloud storage cp {init_script_path} gs://{bucket}/scripts/pytorch_init.sh"
         self.run_command(upload_cmd, "Uploading initialization script")
         
-        # Create cluster
+        # Create cluster with Auto Zone for faster resource allocation
         create_cmd = f"""
         gcloud dataproc clusters create {cluster_name} \
             --project={self.project_id} \
             --region={self.region} \
+            --zone="" \
             --master-machine-type=e2-standard-2 \
             --master-boot-disk-size=30GB \
             --worker-machine-type=e2-standard-2 \
