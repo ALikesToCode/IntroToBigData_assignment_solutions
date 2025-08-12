@@ -22,7 +22,6 @@ from typing import Dict, Any
 GCP_CONFIG = {
     "project_id": "steady-triumph-447006-f8",
     "region": "asia-south1",
-    "zone": "asia-south1-a",
     "cluster_name": "week9-pytorch-streaming",
     "bucket_name": "week9-pytorch-streaming",
     "dataset_bucket": "flower-photos-dataset",
@@ -40,7 +39,6 @@ class PyTorchStreamingDeployer:
         self.config = config
         self.project_id = config["project_id"]
         self.region = config["region"]
-        self.zone = config["zone"]
         
         print("=" * 80)
         print("PyTorch Streaming Image Classifier - GCP Deployment")
@@ -349,12 +347,12 @@ echo "PyTorch initialization complete"
         upload_cmd = f"gcloud storage cp {init_script_path} gs://{bucket}/scripts/pytorch_init.sh"
         self.run_command(upload_cmd, "Uploading initialization script")
         
-        # Create cluster
+        # Create cluster with Auto Zone for optimal resource allocation
         create_cmd = f"""
         gcloud dataproc clusters create {cluster_name} \
             --project={self.project_id} \
             --region={self.region} \
-            --zone={self.zone} \
+            --placement-auto-zone \
             --master-machine-type=e2-standard-2 \
             --master-boot-disk-size=30GB \
             --worker-machine-type=e2-standard-2 \
@@ -438,12 +436,12 @@ echo "PyTorch initialization complete"
         
         print(f"\n🚀 Submitting Kafka streaming job...")
         
-        # Get master node internal IP
+        # Get master node internal IP using cluster describe (no zone needed)
         get_ip_cmd = f"""
-        gcloud compute instances describe {cluster_name}-m \
-            --zone={self.zone} \
+        gcloud dataproc clusters describe {cluster_name} \
+            --region={self.region} \
             --project={self.project_id} \
-            --format='get(networkInterfaces[0].networkIP)'
+            --format='get(config.masterConfig.instanceReferences[0].privateIpAddress)'
         """
         result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True)
         master_ip = result.stdout.strip()
@@ -486,7 +484,7 @@ echo "PyTorch initialization complete"
         print(f"  GCS Output: gs://{bucket}/outputs/")
         
         print("\n🖥️ Access Spark UI:")
-        print(f"  gcloud compute ssh {cluster_name}-m --zone={self.zone} -- -L 4040:localhost:4040")
+        print(f"  gcloud compute ssh {cluster_name}-m --project={self.project_id} -- -L 4040:localhost:4040")
         print(f"  Then browse to: http://localhost:4040")
         
         print("\n📤 Stream New Images:")
@@ -572,8 +570,6 @@ def main():
         config["project_id"] = args.project_id
     if args.region:
         config["region"] = args.region
-        # Update zone to match region
-        config["zone"] = f"{args.region}-a"
     
     # Initialize deployer
     deployer = PyTorchStreamingDeployer(config)
