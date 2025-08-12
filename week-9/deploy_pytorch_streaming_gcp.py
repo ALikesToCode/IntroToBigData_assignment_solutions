@@ -368,8 +368,7 @@ echo "PyTorch initialization complete"
             --cluster={cluster_name} \
             --region={self.region} \
             --project={self.project_id} \
-            --jars=gs://spark-lib/pubsub/spark-pubsub_2.12-2.4.8.jar \
-            --properties="spark.jars.packages=org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,spark.executor.memory=4g,spark.driver.memory=4g,spark.executor.instances=2" \
+            --properties="spark.jars.packages=org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,spark.executor.memory=2g,spark.driver.memory=2g,spark.executor.instances=2" \
             -- {' '.join(job_args)}
         """
         
@@ -408,7 +407,7 @@ echo "PyTorch initialization complete"
             --cluster={cluster_name} \
             --region={self.region} \
             --project={self.project_id} \
-            --properties="spark.jars.packages=org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,spark.executor.memory=4g,spark.driver.memory=4g" \
+            --properties="spark.jars.packages=org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0,spark.executor.memory=2g,spark.driver.memory=2g" \
             -- {' '.join(job_args)}
         """
         
