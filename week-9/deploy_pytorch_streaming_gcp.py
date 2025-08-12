@@ -22,7 +22,7 @@ from typing import Dict, Any
 GCP_CONFIG = {
     "project_id": "steady-triumph-447006-f8",
     "region": "us-central1",
-    "zone": "us-central1-b",
+    "zone": "us-central1-a",
     "cluster_name": "week9-pytorch-streaming",
     "bucket_name": "week9-pytorch-streaming",
     "dataset_bucket": "flower-photos-dataset",
@@ -294,10 +294,9 @@ echo "PyTorch initialization complete"
         gcloud dataproc clusters create {cluster_name} \
             --project={self.project_id} \
             --region={self.region} \
-            --zone={self.zone} \
-            --master-machine-type=n1-standard-2 \
+            --master-machine-type=e2-standard-2 \
             --master-boot-disk-size=50GB \
-            --worker-machine-type=n1-standard-2 \
+            --worker-machine-type=e2-standard-2 \
             --worker-boot-disk-size=50GB \
             --num-workers=2 \
             --image-version=2.1-debian11 \
