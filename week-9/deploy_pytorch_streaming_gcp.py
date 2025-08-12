@@ -301,9 +301,9 @@ echo "PyTorch initialization complete"
         gcloud dataproc clusters create {cluster_name} \
             --project={self.project_id} \
             --region={self.region} \
-            --master-machine-type=e2-medium \
+            --master-machine-type=e2-small \
             --master-boot-disk-size=30GB \
-            --worker-machine-type=e2-medium \
+            --worker-machine-type=e2-small \
             --worker-boot-disk-size=30GB \
             --num-workers=2 \
             --image-version=2.1-debian11 \
