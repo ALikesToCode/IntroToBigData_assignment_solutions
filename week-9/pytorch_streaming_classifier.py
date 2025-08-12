@@ -242,9 +242,18 @@ def create_file_stream(spark: SparkSession, input_path: str):
     Create file streaming source for images (similar to original's binaryFile).
     Monitors a directory for new image files.
     """
+    # Define schema for binaryFile format
+    binary_schema = T.StructType([
+        T.StructField("path", T.StringType(), True),
+        T.StructField("modificationTime", T.TimestampType(), True),
+        T.StructField("length", T.LongType(), True),
+        T.StructField("content", T.BinaryType(), True)
+    ])
+    
     return (
         spark.readStream
         .format("binaryFile")
+        .schema(binary_schema)
         .option("pathGlobFilter", "*.jpg")
         .option("recursiveFileLookup", "true")
         .load(input_path)
