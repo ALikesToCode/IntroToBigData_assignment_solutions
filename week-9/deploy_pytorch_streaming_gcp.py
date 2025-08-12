@@ -247,21 +247,58 @@ class PyTorchStreamingDeployer:
 # Install PyTorch and dependencies
 echo "Installing PyTorch and dependencies..."
 
-# Update pip
+# Update pip first
 /opt/conda/default/bin/pip install --upgrade pip
 
-# Fix numpy/pandas compatibility issues
-/opt/conda/default/bin/pip uninstall -y numpy pandas
-/opt/conda/default/bin/pip install numpy==1.21.6 pandas==1.5.3
+# Completely remove existing numpy/pandas installations (including system packages)
+echo "Removing all existing numpy/pandas installations..."
+/opt/conda/default/bin/pip uninstall -y numpy pandas pyarrow
+/opt/conda/default/bin/conda uninstall -y numpy pandas pyarrow --force-remove 2>/dev/null || true
 
-# Install PyTorch (CPU version for Dataproc)
-/opt/conda/default/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# Clean pip cache to avoid conflicts
+/opt/conda/default/bin/pip cache purge
+
+# Install compatible versions using conda for better dependency resolution
+echo "Installing compatible numpy/pandas via conda..."
+/opt/conda/default/bin/conda install -y numpy=1.21.6 pandas=1.5.3 -c conda-forge
+
+# Verify the installation
+/opt/conda/default/bin/python -c "import numpy; import pandas; print(f'numpy: {numpy.__version__}, pandas: {pandas.__version__}')"
+
+# Install PyTorch (CPU version for Dataproc) with no-deps to avoid conflicts
+echo "Installing PyTorch..."
+/opt/conda/default/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu --no-deps
+/opt/conda/default/bin/pip install typing-extensions
 
 # Install other dependencies with specific versions to avoid conflicts
+echo "Installing other dependencies..."
 /opt/conda/default/bin/pip install \
     pillow==9.5.0 \
     kafka-python==2.0.2 \
-    google-cloud-storage==2.10.0
+    google-cloud-storage==2.10.0 \
+    --no-deps
+
+# Install remaining dependencies
+/opt/conda/default/bin/pip install \
+    requests \
+    urllib3 \
+    certifi \
+    charset-normalizer \
+    idna
+
+# Final verification
+echo "Final package verification..."
+/opt/conda/default/bin/python -c "
+import numpy
+import pandas  
+import torch
+import torchvision
+import PIL
+print('All packages loaded successfully!')
+print(f'numpy: {numpy.__version__}')
+print(f'pandas: {pandas.__version__}')
+print(f'torch: {torch.__version__}')
+"
 
 # Install Kafka on master node
 if [[ "$(hostname)" == *"-m" ]]; then
