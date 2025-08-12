@@ -409,7 +409,7 @@ echo "PyTorch initialization complete"
         # Job arguments
         job_args = [
             "--source", "file",  # Start with file monitoring
-            "--input-path", f"gs://{dataset_bucket}/flower_photos/",
+            "--input-path", f"gs://{bucket}/streaming-input/",
             "--checkpoint", f"gs://{bucket}/checkpoints/pytorch-streaming",
             "--output-path", f"gs://{bucket}/outputs/predictions",
             "--trigger-seconds", "10",
