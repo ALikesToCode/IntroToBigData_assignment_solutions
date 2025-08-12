@@ -244,61 +244,77 @@ class PyTorchStreamingDeployer:
         
         # Create initialization script for PyTorch
         init_script = '''#!/bin/bash
-# Install PyTorch and dependencies
-echo "Installing PyTorch and dependencies..."
+# Install PyTorch and dependencies with complete environment rebuild
+echo "=== COMPLETELY REBUILDING PYTHON ENVIRONMENT ==="
 
-# Update pip first
-/opt/conda/default/bin/pip install --upgrade pip
+# Set environment variables to prevent caching issues
+export PYTHONNOUSERSITE=1
+export PIP_NO_CACHE_DIR=1
 
-# Completely remove existing numpy/pandas installations (including system packages)
-echo "Removing all existing numpy/pandas installations..."
-/opt/conda/default/bin/pip uninstall -y numpy pandas pyarrow
-/opt/conda/default/bin/conda uninstall -y numpy pandas pyarrow --force-remove 2>/dev/null || true
+# Create a completely fresh conda environment
+echo "Creating fresh conda environment..."
+/opt/conda/default/bin/conda create -n pytorch_env python=3.8 -y
+source /opt/conda/default/bin/activate pytorch_env
 
-# Clean pip cache to avoid conflicts
-/opt/conda/default/bin/pip cache purge
+# Update conda and pip in new environment
+conda update -n pytorch_env conda -y
+pip install --upgrade pip
 
-# Install compatible versions using conda for better dependency resolution
-echo "Installing compatible numpy/pandas via conda..."
-/opt/conda/default/bin/conda install -y numpy=1.21.6 pandas=1.5.3 -c conda-forge
+# Install numpy and pandas first with exact compatible versions
+echo "Installing numpy and pandas with exact versions..."
+conda install -y numpy=1.21.6 pandas=1.3.5 -c conda-forge
 
-# Verify the installation
-/opt/conda/default/bin/python -c "import numpy; import pandas; print(f'numpy: {numpy.__version__}, pandas: {pandas.__version__}')"
+# Verify core packages work
+python -c "import numpy; import pandas; print('Core packages OK')"
 
-# Install PyTorch (CPU version for Dataproc) with no-deps to avoid conflicts
-echo "Installing PyTorch..."
-/opt/conda/default/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu --no-deps
-/opt/conda/default/bin/pip install typing-extensions
+# Install PyTorch with CPU support (compatible with our numpy version)
+echo "Installing PyTorch CPU..."
+pip install torch==1.12.1+cpu torchvision==0.13.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
 
-# Install other dependencies with specific versions to avoid conflicts
+# Install other required packages
 echo "Installing other dependencies..."
-/opt/conda/default/bin/pip install \
+pip install \
     pillow==9.5.0 \
     kafka-python==2.0.2 \
-    google-cloud-storage==2.10.0 \
-    --no-deps
+    google-cloud-storage==2.10.0
 
-# Install remaining dependencies
-/opt/conda/default/bin/pip install \
-    requests \
-    urllib3 \
-    certifi \
-    charset-normalizer \
-    idna
+# Make this the default environment for Spark
+echo "Setting up environment for Spark..."
+echo 'export PATH="/opt/conda/envs/pytorch_env/bin:$PATH"' >> /etc/environment
+echo 'export PYSPARK_PYTHON="/opt/conda/envs/pytorch_env/bin/python"' >> /etc/environment
+echo 'export PYSPARK_DRIVER_PYTHON="/opt/conda/envs/pytorch_env/bin/python"' >> /etc/environment
 
-# Final verification
-echo "Final package verification..."
-/opt/conda/default/bin/python -c "
+# Create symlinks to make the new environment default
+ln -sf /opt/conda/envs/pytorch_env/bin/python /usr/local/bin/python
+ln -sf /opt/conda/envs/pytorch_env/bin/python /usr/local/bin/python3
+ln -sf /opt/conda/envs/pytorch_env/bin/pip /usr/local/bin/pip
+
+# Final comprehensive test
+echo "=== FINAL VERIFICATION ==="
+/opt/conda/envs/pytorch_env/bin/python -c "
+import sys
+print('Python path:', sys.executable)
 import numpy
-import pandas  
+import pandas
 import torch
 import torchvision
 import PIL
-print('All packages loaded successfully!')
+from google.cloud import storage
+print('✅ ALL PACKAGES LOADED SUCCESSFULLY!')
 print(f'numpy: {numpy.__version__}')
-print(f'pandas: {pandas.__version__}')
+print(f'pandas: {pandas.__version__}')  
 print(f'torch: {torch.__version__}')
+print(f'pillow: {PIL.__version__}')
+
+# Test numpy/pandas compatibility specifically
+import pandas as pd
+df = pd.DataFrame({'test': [1, 2, 3]})
+print('✅ Pandas DataFrame creation works')
 "
+
+# Update Spark configuration to use new environment
+echo "spark.pyspark.python /opt/conda/envs/pytorch_env/bin/python" >> /etc/spark/conf/spark-defaults.conf
+echo "spark.pyspark.driver.python /opt/conda/envs/pytorch_env/bin/python" >> /etc/spark/conf/spark-defaults.conf
 
 # Install Kafka on master node
 if [[ "$(hostname)" == *"-m" ]]; then
