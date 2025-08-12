@@ -25,6 +25,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.functions import col, pandas_udf, regexp_extract
+from pyspark.sql.functions import PandasUDFType
 
 # Import PyTorch components (same as original notebook)
 import torch
@@ -212,7 +213,7 @@ def imagenet_streaming_model_udf(model_fn=lambda: models.mobilenet_v2(pretrained
         T.StructField("score", T.FloatType(), True)
     ])
     
-    @pandas_udf(returnType=return_type, functionType="scalar_iter")
+    @pandas_udf(returnType=return_type, functionType=PandasUDFType.SCALAR_ITER)
     def wrapped_predict(image_iter):
         return predict(image_iter)
     
