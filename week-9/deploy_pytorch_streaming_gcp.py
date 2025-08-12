@@ -250,15 +250,18 @@ echo "Installing PyTorch and dependencies..."
 # Update pip
 /opt/conda/default/bin/pip install --upgrade pip
 
+# Fix numpy/pandas compatibility issues
+/opt/conda/default/bin/pip uninstall -y numpy pandas
+/opt/conda/default/bin/pip install numpy==1.21.6 pandas==1.5.3
+
 # Install PyTorch (CPU version for Dataproc)
 /opt/conda/default/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-# Install other dependencies
+# Install other dependencies with specific versions to avoid conflicts
 /opt/conda/default/bin/pip install \
-    pillow \
-    kafka-python \
-    google-cloud-storage \
-    tensorflow  # For decode_predictions compatibility
+    pillow==9.5.0 \
+    kafka-python==2.0.2 \
+    google-cloud-storage==2.10.0
 
 # Install Kafka on master node
 if [[ "$(hostname)" == *"-m" ]]; then
