@@ -111,6 +111,10 @@ def get_or_create_model(model_name: str = "mobilenet_v2"):
     if _EXECUTOR_STATE["model"] is not None:
         return _EXECUTOR_STATE["model"], _EXECUTOR_STATE["device"]
     
+    # Set PyTorch hub cache to writable directory
+    import os
+    os.environ['TORCH_HOME'] = '/tmp/torch_cache'
+    
     # Determine device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     _EXECUTOR_STATE["device"] = device
